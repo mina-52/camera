@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 import time
-
+#test
 # ----------------------------------------------------
 # 1. OBS仮想カメラの読み込み設定
 # ----------------------------------------------------
