@@ -125,10 +125,10 @@ OpenCVがサポートする形式：
 
 ## 技術仕様
 
-- **Python**: 3.7以上
-- **OpenCV**: 4.0以上
-- **Ultralytics**: 最新版
-- **NumPy**: 最新版
+- **Python**: 3.12.11
+- **OpenCV**: 4.10.0
+- **Ultralytics**: 8.3.159
+- **NumPy**: 2.3.1
 
 ## ライセンス
 
