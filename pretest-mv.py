@@ -3,7 +3,7 @@ import numpy as np
 from ultralytics import YOLO
 import time
 import argparse
-
+#kome
 # ----------------------------------------------------
 # 1. 動画ファイルの読み込み設定
 # ----------------------------------------------------
@@ -129,10 +129,23 @@ while True:
     info_lines.append(f'状態: {"一時停止" if leftup_paused else "再生中"}')
     for i, line in enumerate(info_lines):
         cv2.putText(panel_rd, line, (20, 60 + i*60), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 255), 3)
-    # 上下連結
-    top = np.hstack([panel_lu, panel_ru])
-    bottom = np.hstack([panel_ld, panel_rd])
-    combined = np.vstack([top, bottom])
+    
+    # 表示ロジックの変更
+    if detection_count > 0:
+        # 物体を認識しているときは四分割で表示
+        # 上下連結
+        top = np.hstack([panel_lu, panel_ru])
+        bottom = np.hstack([panel_ld, panel_rd])
+        combined = np.vstack([top, bottom])
+    elif not leftup_paused:
+        # 一時停止中ではないかつ物体を認識していないときは右上の画面だけを拡大して表示
+        combined = cv2.resize(annotated_frame, (window_width, window_height))
+    else:
+        # 一時停止中で物体を認識していない場合は四分割表示を維持
+        top = np.hstack([panel_lu, panel_ru])
+        bottom = np.hstack([panel_ld, panel_rd])
+        combined = np.vstack([top, bottom])
+    
     cv2.imshow('Detection Viewer', combined)
 
     key = cv2.waitKey(1) & 0xFF
