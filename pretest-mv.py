@@ -3,7 +3,7 @@ import numpy as np
 from ultralytics import YOLO
 import time
 import argparse
-
+#kome
 # ----------------------------------------------------
 # 1. 動画ファイルの読み込み設定
 # ----------------------------------------------------
