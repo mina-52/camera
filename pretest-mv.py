@@ -28,6 +28,8 @@ if not cap.isOpened():
 
 # YOLOv8nモデルのパス
 model = YOLO('weights.pt')  # ここをあなたのモデルのパスに置き換えてください
+# 第二モデル（number.pt）の追加
+number_model = YOLO('number.pt')  # 数字認識用モデル
 
 print("リアルタイム検出を開始します。'q'キーで終了します。")
 
@@ -83,6 +85,32 @@ while True:
             if crop.size > 0:
                 new_crops.append(crop)
                 new_infos.append({'box': (x1, y1, x2, y2)})
+    
+    # 第二モデル（number.pt）での推論
+    number_results = number_model(frame)
+    number_detection_count = 0
+    number_detections = []
+    for r in number_results:
+        boxes = r.boxes
+        for box in boxes:
+            conf = float(box.conf[0])
+            # 信頼度が90%以上の場合のみ処理
+            if conf >= 0.9:
+                number_detection_count += 1
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                cls = int(box.cls[0])
+                # クラス名を取得（利用可能な場合）
+                try:
+                    class_name = r.names[cls]
+                except:
+                    class_name = f"Class_{cls}"
+                number_detections.append({
+                    'box': (x1, y1, x2, y2),
+                    'confidence': conf,
+                    'class': cls,
+                    'class_name': class_name
+                })
+    
     # 最新の検出物体画像・情報を履歴に保存
     if new_crops:
         detected_history = [new_crops[0]]
@@ -118,17 +146,29 @@ while True:
     else:
         panel_lu = np.zeros((half_h, half_w, 3), dtype=np.uint8)
         cv2.putText(panel_lu, 'No Image', (40, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 3)
-    # 右下：認識情報
-    panel_rd = np.zeros((half_h, half_w, 3), dtype=np.uint8)
-    info_lines = []
-    if new_infos:
-        info_lines.append(f'座標: {new_infos[0]["box"]}')
+    # 右下：第二モデル（number.pt）の検出結果（バウンディングボックス付き）
+    if number_detections:
+        # 第二モデルの検出結果を描画した画像を作成
+        number_annotated_frame = frame.copy()
+        for det in number_detections:
+            x1, y1, x2, y2 = det['box']
+            conf = det['confidence']
+            class_name = det['class_name']
+            
+            # バウンディングボックスを描画
+            cv2.rectangle(number_annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            
+            # ラベルを描画
+            label = f'{class_name} {conf:.2f}'
+            label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)[0]
+            cv2.rectangle(number_annotated_frame, (x1, y1 - label_size[1] - 10), (x1 + label_size[0], y1), (0, 255, 0), -1)
+            cv2.putText(number_annotated_frame, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
+        
+        panel_rd = cv2.resize(number_annotated_frame, (half_w, half_h))
     else:
-        info_lines.append('No Detection')
-    info_lines.append(f'フレーム: {leftup_frame_count}')
-    info_lines.append(f'状態: {"一時停止" if leftup_paused else "再生中"}')
-    for i, line in enumerate(info_lines):
-        cv2.putText(panel_rd, line, (20, 60 + i*60), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 255), 3)
+        # 検出がない場合は元のフレームを表示
+        panel_rd = cv2.resize(frame, (half_w, half_h))
+        cv2.putText(panel_rd, 'No Number Detection', (40, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 3)
     
     # 表示ロジックの変更
     if detection_count > 0:
