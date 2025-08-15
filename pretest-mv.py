@@ -27,11 +27,11 @@ if not cap.isOpened():
     exit()
 
 # YOLOv8nモデルのパス
-model = YOLO('weights.pt')  # ここをあなたのモデルのパスに置き換えてください
+model = YOLO('weights.pt')  # モデルのパスに置き換え
 
 print("リアルタイム検出を開始します。'q'キーで終了します。")
 
-# スクリーンサイズ取得（起動時に一度だけ）
+# スクリーンサイズ取得
 try:
     import tkinter as tk
     root = tk.Tk()
@@ -49,16 +49,20 @@ cv2.namedWindow('Detection Viewer', cv2.WINDOW_NORMAL)
 cv2.resizeWindow('Detection Viewer', window_width, window_height)
 cv2.setWindowProperty('Detection Viewer', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
-# --- 四分割用の履歴リスト ---
-detected_history = []  # 検出物体の切り抜き履歴（最新が先頭）
-HISTORY_SIZE = 1  # 今回は最新のみで十分
+# --- 四分割用の履歴 ---
+detected_history = []
+HISTORY_SIZE = 1
 
-# --- エンターキーで切り替え用 ---
+# --- 左上用変数 ---
 leftup_image = None
 leftup_info = None
-leftup_paused = False  # 一時停止フラグ
-leftup_frame_count = 0  # フレームカウンター
-last_frame_time = time.time()  # 最後のフレーム更新時間
+leftup_paused = False
+leftup_frame_count = 0
+
+# --- ランドルト環クラス ---
+LANDOLT_CLASS_NAMES = ["randoruto", "randoruto2"]  # 2種類対応
+landolt_detected = False
+last_frame_time = time.time()
 
 while True:
     ret, frame = cap.read()
@@ -71,91 +75,109 @@ while True:
     # 推論
     results = model(frame)
     annotated_frame = results[0].plot()
-    detection_count = 0
     new_crops = []
     new_infos = []
+    landolt_found = False
+
     for r in results:
         boxes = r.boxes
+        names = r.names if hasattr(r, "names") else {}
         for box in boxes:
-            detection_count += 1
             x1, y1, x2, y2 = map(int, box.xyxy[0])
+            cls_id = int(box.cls[0]) if hasattr(box, "cls") else None
+            class_name = names.get(cls_id, str(cls_id)) if cls_id is not None else ""
+            if class_name in LANDOLT_CLASS_NAMES:
+                landolt_found = True
             crop = frame[max(0, y1):max(0, y2), max(0, x1):max(0, x2)]
             if crop.size > 0:
                 new_crops.append(crop)
-                new_infos.append({'box': (x1, y1, x2, y2)})
-    # 最新の検出物体画像・情報を履歴に保存
+                new_infos.append({'box': (x1, y1, x2, y2), 'class': class_name})
+
+    # 検出フラグ更新
+    landolt_detected = landolt_found
+
+    # 最新の履歴保存
     if new_crops:
         detected_history = [new_crops[0]]
         detected_info = new_infos[0]
     else:
         detected_info = None
 
-    # 左上のフレーム更新（一秒ごと、一時停止中でない場合）
-    if not leftup_paused and (now - last_frame_time > 1.0):
-        if detected_history:
-            leftup_image = detected_history[0].copy()
+    # --- 左上パネル更新ロジック ---
+    if landolt_detected and leftup_image is None and new_crops:
+        # 初回検出時に即反映
+        leftup_image = new_crops[0].copy()
+        leftup_info = detected_info
+        leftup_frame_count = 1
+        last_frame_time = now
+
+    if landolt_detected and not leftup_paused and new_crops:
+        # 1秒ごとに更新
+        if now - last_frame_time >= 1.0:
+            leftup_image = new_crops[0].copy()
             leftup_info = detected_info
             leftup_frame_count += 1
             last_frame_time = now
 
-    # 四分割パネル作成
-    half_w = max(1, window_width // 2)
-    half_h = max(1, window_height // 2)
-    # 右上：検出中の画像
-    panel_ru = cv2.resize(annotated_frame, (half_w, half_h))
-    # 左下：フレームごとに最新
-    if detected_history:
-        panel_ld = cv2.resize(detected_history[0], (half_w, half_h))
+    # 表示切り替え
+    if not landolt_detected:
+        # 検出なし → 一画面表示
+        cv2.imshow('Detection Viewer', cv2.resize(annotated_frame, (window_width, window_height)))
+        leftup_image = None  # 検出が途切れたらリセット
     else:
-        panel_ld = np.zeros((half_h, half_w, 3), dtype=np.uint8)
-        cv2.putText(panel_ld, 'No Image', (40, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 3)
-    # 左上：一秒ごと更新（一時停止可能）
-    if leftup_image is not None:
-        panel_lu = cv2.resize(leftup_image, (half_w, half_h))
-        # 一時停止状態を表示
-        status_text = "PAUSED" if leftup_paused else "PLAYING"
-        cv2.putText(panel_lu, status_text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0) if not leftup_paused else (0, 0, 255), 2)
-    else:
-        panel_lu = np.zeros((half_h, half_w, 3), dtype=np.uint8)
-        cv2.putText(panel_lu, 'No Image', (40, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 3)
-    # 右下：認識情報
-    panel_rd = np.zeros((half_h, half_w, 3), dtype=np.uint8)
-    info_lines = []
-    if new_infos:
-        info_lines.append(f'座標: {new_infos[0]["box"]}')
-    else:
-        info_lines.append('No Detection')
-    info_lines.append(f'フレーム: {leftup_frame_count}')
-    info_lines.append(f'状態: {"一時停止" if leftup_paused else "再生中"}')
-    for i, line in enumerate(info_lines):
-        cv2.putText(panel_rd, line, (20, 60 + i*60), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 255), 3)
-    # 上下連結
-    top = np.hstack([panel_lu, panel_ru])
-    bottom = np.hstack([panel_ld, panel_rd])
-    combined = np.vstack([top, bottom])
-    cv2.imshow('Detection Viewer', combined)
+        # 四分割パネル
+        half_w = max(1, window_width // 2)
+        half_h = max(1, window_height // 2)
 
+        # 右上
+        panel_ru = cv2.resize(annotated_frame, (half_w, half_h))
+
+        # 左下
+        if detected_history:
+            panel_ld = cv2.resize(detected_history[0], (half_w, half_h))
+        else:
+            panel_ld = np.zeros((half_h, half_w, 3), dtype=np.uint8)
+            cv2.putText(panel_ld, 'No Image', (40, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 3)
+
+        # 左上
+        if leftup_image is not None:
+            panel_lu = cv2.resize(leftup_image, (half_w, half_h))
+            status_text = "PAUSED" if leftup_paused else "PLAYING"
+            cv2.putText(panel_lu, status_text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0,
+                        (0, 255, 0) if not leftup_paused else (0, 0, 255), 2)
+        else:
+            panel_lu = np.zeros((half_h, half_w, 3), dtype=np.uint8)
+            cv2.putText(panel_lu, 'No Image', (40, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 3)
+
+        # 右下
+        panel_rd = np.zeros((half_h, half_w, 3), dtype=np.uint8)
+        info_lines = []
+        if leftup_info:
+            info_lines.append(f'座標: {leftup_info["box"]}')
+            info_lines.append(f'クラス: {leftup_info["class"]}')
+        else:
+            info_lines.append('No Detection')
+        info_lines.append(f'フレーム: {leftup_frame_count}')
+        info_lines.append(f'状態: {"一時停止" if leftup_paused else "再生中"}')
+        for i, line in enumerate(info_lines):
+            cv2.putText(panel_rd, line, (20, 60 + i*60), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 255), 3)
+
+        combined = np.vstack([np.hstack([panel_lu, panel_ru]),
+                              np.hstack([panel_ld, panel_rd])])
+        cv2.imshow('Detection Viewer', combined)
+
+    # キー操作
     key = cv2.waitKey(1) & 0xFF
     if key == ord('q'):
         break
-    elif key == 13:  # エンターキー（ASCII: 13）
+    elif key == 13:  # Enterキー
         if leftup_paused:
-            # 一時停止中の場合：現在のフレームまで飛ばす
-            if detected_history:
-                leftup_image = detected_history[0].copy()
-                leftup_info = detected_info
-                leftup_frame_count += 1
-                last_frame_time = now
             leftup_paused = False
             print("再生を再開しました")
         else:
-            # 再生中の場合：一時停止
             leftup_paused = True
             print("一時停止しました")
 
 cap.release()
 cv2.destroyAllWindows()
 print("検出を終了しました。")
-
-
-  #test
