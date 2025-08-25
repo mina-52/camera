@@ -60,6 +60,10 @@ leftup_paused = False  # 一時停止フラグ
 leftup_frame_count = 0  # フレームカウンター
 last_frame_time = time.time()  # 最後のフレーム更新時間
 
+# --- 左下用の変数（左上と同期） ---
+leftdown_image = None
+leftdown_info = None
+
 while True:
     ret, frame = cap.read()
     if not ret:
@@ -74,19 +78,33 @@ while True:
     detection_count = 0
     new_crops = []
     new_infos = []
+    
+    # 信頼度付きで検出結果を収集
+    detections_with_confidence = []
     for r in results:
         boxes = r.boxes
         for box in boxes:
             detection_count += 1
             x1, y1, x2, y2 = map(int, box.xyxy[0])
+            confidence = float(box.conf[0])  # 信頼度を取得
             crop = frame[max(0, y1):max(0, y2), max(0, x1):max(0, x2)]
             if crop.size > 0:
-                new_crops.append(crop)
-                new_infos.append({'box': (x1, y1, x2, y2)})
+                detections_with_confidence.append({
+                    'crop': crop,
+                    'box': (x1, y1, x2, y2),
+                    'confidence': confidence
+                })
+    
+    # 信頼度でソート（高い順）
+    detections_with_confidence.sort(key=lambda x: x['confidence'], reverse=True)
+    
     # 最新の検出物体画像・情報を履歴に保存
-    if new_crops:
-        detected_history = [new_crops[0]]
-        detected_info = new_infos[0]
+    if detections_with_confidence:
+        detected_history = [detections_with_confidence[0]['crop']]
+        detected_info = {
+            'box': detections_with_confidence[0]['box'],
+            'confidence': detections_with_confidence[0]['confidence']
+        }
     else:
         detected_info = None
 
@@ -103,26 +121,51 @@ while True:
     half_h = max(1, window_height // 2)
     # 右上：検出中の画像
     panel_ru = cv2.resize(annotated_frame, (half_w, half_h))
-    # 左下：フレームごとに最新
-    if detected_history:
-        panel_ld = cv2.resize(detected_history[0], (half_w, half_h))
+    
+    # 左下：信頼度の低い方（2番目）を表示、左上と同期
+    if len(detections_with_confidence) >= 2:
+        # 2つ以上の物体が検出された場合、信頼度の低い方を左下に表示
+        if not leftup_paused and leftup_image is not None:
+            # 左上と同期して更新
+            leftdown_image = detections_with_confidence[1]['crop'].copy()
+            leftdown_info = {
+                'box': detections_with_confidence[1]['box'],
+                'confidence': detections_with_confidence[1]['confidence']
+            }
+        panel_ld = cv2.resize(leftdown_image, (half_w, half_h)) if leftdown_image is not None else np.zeros((half_h, half_w, 3), dtype=np.uint8)
+    elif detected_history:
+        # 1つの物体のみの場合
+        if not leftup_paused and leftup_image is not None:
+            leftdown_image = detected_history[0].copy()
+            leftdown_info = detected_info
+        panel_ld = cv2.resize(leftdown_image, (half_w, half_h)) if leftdown_image is not None else np.zeros((half_h, half_w, 3), dtype=np.uint8)
     else:
         panel_ld = np.zeros((half_h, half_w, 3), dtype=np.uint8)
         cv2.putText(panel_ld, 'No Image', (40, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 3)
-    # 左上：一秒ごと更新（一時停止可能）
+    
+    # 左上：信頼度の高い方（1番目）を表示（一時停止可能）
     if leftup_image is not None:
         panel_lu = cv2.resize(leftup_image, (half_w, half_h))
         # 一時停止状態を表示
         status_text = "PAUSED" if leftup_paused else "PLAYING"
         cv2.putText(panel_lu, status_text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0) if not leftup_paused else (0, 0, 255), 2)
+        # 信頼度を表示
+        if leftup_info and 'confidence' in leftup_info:
+            conf_text = f"Conf: {leftup_info['confidence']:.3f}"
+            cv2.putText(panel_lu, conf_text, (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
     else:
         panel_lu = np.zeros((half_h, half_w, 3), dtype=np.uint8)
         cv2.putText(panel_lu, 'No Image', (40, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 3)
+    
     # 右下：認識情報
     panel_rd = np.zeros((half_h, half_w, 3), dtype=np.uint8)
     info_lines = []
-    if new_infos:
-        info_lines.append(f'座標: {new_infos[0]["box"]}')
+    if detections_with_confidence:
+        info_lines.append(f'検出数: {len(detections_with_confidence)}')
+        if len(detections_with_confidence) >= 1:
+            info_lines.append(f'左上(1): {detections_with_confidence[0]["confidence"]:.3f}')
+        if len(detections_with_confidence) >= 2:
+            info_lines.append(f'左下(2): {detections_with_confidence[1]["confidence"]:.3f}')
     else:
         info_lines.append('No Detection')
     info_lines.append(f'フレーム: {leftup_frame_count}')
@@ -159,6 +202,16 @@ while True:
                 leftup_info = detected_info
                 leftup_frame_count += 1
                 last_frame_time = now
+                # 左下も同期して更新
+                if len(detections_with_confidence) >= 2:
+                    leftdown_image = detections_with_confidence[1]['crop'].copy()
+                    leftdown_info = {
+                        'box': detections_with_confidence[1]['box'],
+                        'confidence': detections_with_confidence[1]['confidence']
+                    }
+                elif detected_history:
+                    leftdown_image = detected_history[0].copy()
+                    leftdown_info = detected_info
             leftup_paused = False
             print("再生を再開しました")
         else:
