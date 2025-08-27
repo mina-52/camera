@@ -112,8 +112,8 @@ while True:
     else:
         detected_info = None
 
-    # 左上のフレーム更新（一秒ごと、一時停止中でない場合）
-    if not leftup_paused and (now - last_frame_time > 1.0):
+    # 左上/左下のフレーム更新（0.5秒ごと、一時停止中でない場合）
+    if not leftup_paused and (now - last_frame_time > 0.5):
         if detected_history:
             leftup_image = detected_history[0].copy()
             leftup_info = detected_info
@@ -121,17 +121,13 @@ while True:
             last_frame_time = now
 
         # 左下も左上の更新タイミングに同期
-        # 可能なら左上と同じラベルの中から2番目に高い信頼度を採用
-        leftdown_image = None
-        leftdown_info = None
+        # 二重検出があるときのみ更新。無いときは前回の表示を維持。
         if len(detections_with_confidence) >= 2:
             candidate = None
             if leftup_info and 'label' in leftup_info:
                 same_label = [d for d in detections_with_confidence if d['label'] == leftup_info['label']]
-                # 先頭は左上と同一個体の可能性が高いので、同ラベル内の2番目を採用
                 if len(same_label) >= 2:
                     candidate = same_label[1]
-            # 同じラベルの2番目が見つからなければ、全体の2番目にフォールバック
             if candidate is None:
                 candidate = detections_with_confidence[1]
             leftdown_image = candidate['crop'].copy()
@@ -141,12 +137,13 @@ while True:
                 'cls_id': candidate['cls_id'],
                 'label': candidate['label']
             }
+        # else: 何もしない（継続表示）
 
     # 四分割パネル作成
     half_w = max(1, window_width // 2)
     half_h = max(1, window_height // 2)
 
-    # 左上：従来通り（一秒ごと更新・一時停止可能）
+    # 左上：従来通り（0.5秒ごと更新・一時停止可能）
     if leftup_image is not None:
         panel_lu = cv2.resize(leftup_image, (half_w, half_h))
         status_text = "PAUSED" if leftup_paused else "PLAYING"
@@ -158,10 +155,10 @@ while True:
         panel_lu = np.zeros((half_h, half_w, 3), dtype=np.uint8)
         cv2.putText(panel_lu, 'No Image', (40, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 3)
 
-    # 右上：検出中の画像
+    # 右上：検出中の画像（通常表示）
     panel_ru = cv2.resize(annotated_frame, (half_w, half_h))
 
-    # 左下：二つ検出時のみ、左上と同ラベルの低信頼度（なければ全体2番目）。左上と同期。
+    # 左下：二つ検出時のみ更新。無い場合は前回の画像を継続表示。
     if leftdown_image is not None:
         panel_ld = cv2.resize(leftdown_image, (half_w, half_h))
         if leftdown_info and 'confidence' in leftdown_info:
@@ -179,7 +176,6 @@ while True:
         if len(detections_with_confidence) >= 1:
             info_lines.append(f'左上(1): {detections_with_confidence[0]["label"]} {detections_with_confidence[0]["confidence"]:.3f}')
         if len(detections_with_confidence) >= 2:
-            # 表示候補（同ラベル2番目があればそれ、なければ全体2番目）
             if leftup_info:
                 same_label = [d for d in detections_with_confidence if d['label'] == leftup_info['label']]
                 if len(same_label) >= 2:
@@ -212,6 +208,7 @@ while True:
                 leftup_info = detected_info
                 leftup_frame_count += 1
                 last_frame_time = now
+            # 左下は、二重検出がある場合のみ更新。無い場合は前回の画像を保持。
             if len(detections_with_confidence) >= 2:
                 candidate = None
                 if leftup_info and 'label' in leftup_info:
@@ -227,9 +224,6 @@ while True:
                     'cls_id': candidate['cls_id'],
                     'label': candidate['label']
                 }
-            else:
-                leftdown_image = None
-                leftdown_info = None
             leftup_paused = False
             print("再生を再開しました")
         else:
