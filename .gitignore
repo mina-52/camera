@@ -90,7 +90,9 @@ Desktop.ini
 # *.pth
 # *.onnx
 
-# 動画ファイル（必要に応じて）
+# 動画ファイル
+akarui-ari.mp4
+akarui.mkv
 # *.mov
 # *.mp4
 # *.avi
