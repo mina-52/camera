@@ -37,10 +37,12 @@ def detect_rust_percentage(image_path, output_folder='sabi'):
     hsv_test = cv2.cvtColor(bgr_test, cv2.COLOR_BGR2HSV)
     print(f"RGB(85, 57, 45) → HSV({hsv_test[0,0,0]}, {hsv_test[0,0,1]}, {hsv_test[0,0,2]})")
     
-    # 錆のHSV範囲を定義（実際の値に基づいて調整）
-    # RGB(85, 57, 45) → HSV(9, 120, 85)
-    rust_h_min, rust_s_min, rust_v_min = 5, 80, 60   # 錆の下限（実際の値に合わせて調整）
-    rust_h_max, rust_s_max, rust_v_max = 15, 140, 100   # 錆の上限（実際の値に合わせて調整）
+    # 錆のHSV範囲を定義（提供されたHSV値に基づいて調整）
+    # 提供されたHSV値: (8,132,89), (11,84,63), (11,76,71), (3,43,114), (7,102,89)
+    # これらの値を網羅する範囲: H(3-11), S(43-132), V(63-114)
+    # 少し余裕を持たせて設定
+    rust_h_min, rust_s_min, rust_v_min = 2, 34, 40   # 錆の下限
+    rust_h_max, rust_s_max, rust_v_max = 12, 140, 120   # 錆の上限
     
     print(f"現在の錆検出範囲: H({rust_h_min}-{rust_h_max}), S({rust_s_min}-{rust_s_max}), V({rust_v_min}-{rust_v_max})")
     
@@ -101,7 +103,7 @@ def detect_rust_percentage(image_path, output_folder='sabi'):
 def main():
     """メイン関数"""
     # sabi.jpgファイルの錆を検出
-    image_path = 'sabi.jpg'
+    image_path = 'sabi3.jpg'
     
     if os.path.exists(image_path):
         print(f"画像 {image_path} の錆を検出中...")

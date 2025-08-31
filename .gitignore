@@ -1,6 +1,9 @@
 # randorutoフォルダーをすべて対象にする
 randoruto/
 
+# sabiフォルダーをすべて対象にする
+sabi/
+
 # Python関連
 __pycache__/
 *.py[cod]
