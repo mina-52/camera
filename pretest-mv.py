@@ -3,6 +3,8 @@ import numpy as np
 from ultralytics import YOLO
 import time
 import argparse
+import os
+from datetime import datetime
 #kome
 # ----------------------------------------------------
 # 1. 動画ファイルの読み込み設定
@@ -14,6 +16,18 @@ def parse_arguments():
     return parser.parse_args()
 
 args = parse_arguments()
+
+# randorutoフォルダーの作成
+save_folder = "randoruto"
+if not os.path.exists(save_folder):
+    os.makedirs(save_folder)
+    print(f"フォルダーを作成しました: {save_folder}")
+
+# 実行セッション用のフォルダーを作成（一回の実行につき一個）
+session_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+session_folder = os.path.join(save_folder, f"session_{session_timestamp}")
+os.makedirs(session_folder)
+print(f"セッションフォルダーを作成しました: {session_folder}")
 
 # 動画ファイルの設定
 cap = cv2.VideoCapture(args.video)
@@ -63,6 +77,42 @@ last_frame_time = time.time()  # 最後のフレーム更新時間
 # --- 左下用の変数（左上と同期） ---
 leftdown_image = None
 leftdown_info = None
+
+# --- 保存用のカウンター ---
+save_counter = 0
+
+def save_detection_images(frame, detections_with_confidence, frame_count):
+    """一時停止時に検出画像を保存する関数"""
+    global save_counter
+    
+    if not detections_with_confidence:
+        return
+    
+    # 全ての検出物体にバウンディングボックスを付けた画像を作成
+    annotated_img = frame.copy()
+    
+    # 各検出物体に対してバウンディングボックスとラベルを追加
+    for i, detection in enumerate(detections_with_confidence):
+        x1, y1, x2, y2 = detection['box']
+        label = detection['label']
+        confidence = detection['confidence']
+        
+        # バウンディングボックスを描画
+        cv2.rectangle(annotated_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        
+        # ラベルと信頼度のテキストを追加
+        text = f"{label}: {confidence:.3f}"
+        cv2.putText(annotated_img, text, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+    
+    # ファイル名を生成（検出数も含める）
+    detection_count = len(detections_with_confidence)
+    filename = f"detection_frame{frame_count}_{detection_count}objects.jpg"
+    filepath = os.path.join(session_folder, filename)
+    
+    # 画像を保存
+    cv2.imwrite(filepath, annotated_img)
+    print(f"画像を保存しました: {session_folder}/{filename} (検出物体数: {detection_count})")
+    save_counter += 1
 
 while True:
     ret, frame = cap.read()
@@ -230,10 +280,16 @@ while True:
             # 再生中の場合：一時停止
             leftup_paused = True
             print("一時停止しました")
+            # 一時停止時に検出画像を保存
+            if detections_with_confidence:
+                save_detection_images(frame, detections_with_confidence, leftup_frame_count)
+                print(f"一時停止時の検出画像を保存しました（合計: {save_counter}枚）")
 
 cap.release()
 cv2.destroyAllWindows()
 print("検出を終了しました。")
+print(f"保存された画像の総数: {save_counter}枚")
+print(f"保存先フォルダー: {session_folder}")
 
 
   
