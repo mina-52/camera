@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 
 # === 画像読み込み ===
-img = cv2.imread("sabi.jpg")
+img = cv2.imread("sabi4.jpg")
 
 # === HSVに変換 ===
 hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
@@ -27,8 +27,8 @@ for cnt in contours:
         continue
 
     # 面積フィルタ (小さすぎ/大きすぎを除外)
-    if area < 50 or area > 5000:
-        continue
+    if area < 30 or area > 5000:
+       continue
 
     # 円形度フィルタ
     circularity = 4 * np.pi * (area / (perimeter * perimeter))
