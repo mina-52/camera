@@ -42,7 +42,7 @@ def detect_rust_percentage(image_path, output_folder='sabi'):
     # これらの値を網羅する範囲: H(3-11), S(43-132), V(63-114)
     # 少し余裕を持たせて設定
     rust_h_min, rust_s_min, rust_v_min = 2, 34, 40   # 錆の下限
-    rust_h_max, rust_s_max, rust_v_max = 13, 145, 120   # 錆の上限
+    rust_h_max, rust_s_max, rust_v_max = 13, 145, 125   # 錆の上限
     
     print(f"現在の錆検出範囲: H({rust_h_min}-{rust_h_max}), S({rust_s_min}-{rust_s_max}), V({rust_v_min}-{rust_v_max})")
     
