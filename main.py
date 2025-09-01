@@ -11,7 +11,7 @@ class ScriptManager:
         self.current_script = None
         self.scripts = {
             '1': 'pretest-mv.py',
-            '2': 'pretest-mv.py',
+            '2': 'sabi2.py',
             '3': 'cameratest.py',
             '4': 'test2.py',
             '5': 'drone_detection copy.py'
