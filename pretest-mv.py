@@ -11,7 +11,7 @@ from datetime import datetime
 # ----------------------------------------------------
 def parse_arguments():
     parser = argparse.ArgumentParser(description='動画ファイルを使用した物体検出')
-    parser.add_argument('--video', type=str, default=r"C:\DJI_0008.MOV",
+    parser.add_argument('--video', type=str, default=r"test.mov",
                        help='動画ファイルのパス（デフォルト: test.mov）')
     return parser.parse_args()
 

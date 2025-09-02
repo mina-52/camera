@@ -72,14 +72,14 @@ leftdown_info = None
 # --- 保存用のカウンター ---
 save_counter = 0
 
-def save_detection_images(frame, detections_with_confidence, frame_count):
+def save_detection_images(frame, detections_with_confidence, frame_count, leftup_info, leftdown_info):
     """一時停止時に検出画像を保存する関数"""
     global save_counter
     
     if not detections_with_confidence:
         return
     
-    # 全ての検出物体にバウンディングボックスを付けた画像を作成
+    # 1. 全ての検出物体にバウンディングボックスを付けた画像を作成
     annotated_img = frame.copy()
     
     # 各検出物体に対してバウンディングボックスとラベルを追加
@@ -104,6 +104,63 @@ def save_detection_images(frame, detections_with_confidence, frame_count):
     cv2.imwrite(filepath, annotated_img)
     print(f"画像を保存しました: {session_folder}/{filename} (検出物体数: {detection_count})")
     save_counter += 1
+    
+    # 2. 左上の画像を個別保存（バウンディングボックス付き）
+    if leftup_info:
+        leftup_crop = create_cropped_image_with_bbox(frame, leftup_info)
+        if leftup_crop is not None:
+            leftup_filename = f"detection_frame{frame_count}_leftup_{leftup_info['label']}_{leftup_info['confidence']:.3f}.jpg"
+            leftup_filepath = os.path.join(session_folder, leftup_filename)
+            cv2.imwrite(leftup_filepath, leftup_crop)
+            print(f"左上画像を保存しました: {leftup_filename}")
+            save_counter += 1
+    
+    # 3. 左下の画像を個別保存（バウンディングボックス付き）
+    if leftdown_info:
+        leftdown_crop = create_cropped_image_with_bbox(frame, leftdown_info)
+        if leftdown_crop is not None:
+            leftdown_filename = f"detection_frame{frame_count}_leftdown_{leftdown_info['label']}_{leftdown_info['confidence']:.3f}.jpg"
+            leftdown_filepath = os.path.join(session_folder, leftdown_filename)
+            cv2.imwrite(leftdown_filepath, leftdown_crop)
+            print(f"左下画像を保存しました: {leftdown_filename}")
+            save_counter += 1
+
+def create_cropped_image_with_bbox(frame, detection_info):
+    """検出情報から切り抜き画像とバウンディングボックスを生成"""
+    if not detection_info:
+        return None
+    
+    x1, y1, x2, y2 = detection_info['box']
+    label = detection_info['label']
+    confidence = detection_info['confidence']
+    
+    # 元画像から切り抜き範囲を拡張（バウンディングボックスを含める余白を追加）
+    margin = 20  # 余白のピクセル数
+    crop_x1 = max(0, x1 - margin)
+    crop_y1 = max(0, y1 - margin)
+    crop_x2 = min(frame.shape[1], x2 + margin)
+    crop_y2 = min(frame.shape[0], y2 + margin)
+    
+    # 切り抜き画像を作成
+    cropped_img = frame[crop_y1:crop_y2, crop_x1:crop_x2].copy()
+    
+    if cropped_img.size == 0:
+        return None
+    
+    # 切り抜き画像内での相対座標に変換
+    relative_x1 = x1 - crop_x1
+    relative_y1 = y1 - crop_y1
+    relative_x2 = x2 - crop_x1
+    relative_y2 = y2 - crop_y1
+    
+    # バウンディングボックスを描画
+    cv2.rectangle(cropped_img, (relative_x1, relative_y1), (relative_x2, relative_y2), (0, 255, 0), 2)
+    
+    # ラベルと信頼度のテキストを追加
+    text = f"{label}: {confidence:.3f}"
+    cv2.putText(cropped_img, text, (relative_x1, relative_y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+    
+    return cropped_img
 
 while True:
     ret, frame = cap.read()
@@ -271,7 +328,7 @@ while True:
             print("一時停止しました")
             # 一時停止時に検出画像を保存
             if detections_with_confidence:
-                save_detection_images(frame, detections_with_confidence, leftup_frame_count)
+                save_detection_images(frame, detections_with_confidence, leftup_frame_count, leftup_info, leftdown_info)
                 print(f"一時停止時の検出画像を保存しました（合計: {save_counter}枚）")
 
 cap.release()
