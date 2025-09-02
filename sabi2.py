@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 
 # === 画像読み込み ===
-img = cv2.imread("sabi4.jpg")
+img = cv2.imread("sabi.jpg")
 
 # === HSVに変換 ===
 hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
