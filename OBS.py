@@ -79,6 +79,10 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
     if not detections_with_confidence:
         return
     
+    # 四分割サイズを計算
+    half_w = max(1, window_width // 2)
+    half_h = max(1, window_height // 2)
+    
     # 1. 全ての検出物体にバウンディングボックスを付けた画像を作成
     annotated_img = frame.copy()
     
@@ -105,9 +109,9 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
     print(f"画像を保存しました: {session_folder}/{filename} (検出物体数: {detection_count})")
     save_counter += 1
     
-    # 2. 左上の画像を個別保存（バウンディングボックス付き）
+    # 2. 左上の画像を個別保存（四分割サイズに拡大、バウンディングボックス付き）
     if leftup_info:
-        leftup_crop = create_cropped_image_with_bbox(frame, leftup_info)
+        leftup_crop = create_cropped_image_with_bbox(frame, leftup_info, half_w, half_h)
         if leftup_crop is not None:
             leftup_filename = f"detection_frame{frame_count}_leftup_{leftup_info['label']}_{leftup_info['confidence']:.3f}.jpg"
             leftup_filepath = os.path.join(session_folder, leftup_filename)
@@ -115,9 +119,9 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
             print(f"左上画像を保存しました: {leftup_filename}")
             save_counter += 1
     
-    # 3. 左下の画像を個別保存（バウンディングボックス付き）
+    # 3. 左下の画像を個別保存（四分割サイズに拡大、バウンディングボックス付き）
     if leftdown_info:
-        leftdown_crop = create_cropped_image_with_bbox(frame, leftdown_info)
+        leftdown_crop = create_cropped_image_with_bbox(frame, leftdown_info, half_w, half_h)
         if leftdown_crop is not None:
             leftdown_filename = f"detection_frame{frame_count}_leftdown_{leftdown_info['label']}_{leftdown_info['confidence']:.3f}.jpg"
             leftdown_filepath = os.path.join(session_folder, leftdown_filename)
@@ -125,8 +129,8 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
             print(f"左下画像を保存しました: {leftdown_filename}")
             save_counter += 1
 
-def create_cropped_image_with_bbox(frame, detection_info):
-    """検出情報から切り抜き画像とバウンディングボックスを生成"""
+def create_cropped_image_with_bbox(frame, detection_info, target_width, target_height):
+    """検出情報から切り抜き画像とバウンディングボックスを生成（指定サイズにリサイズ）"""
     if not detection_info:
         return None
     
@@ -147,20 +151,28 @@ def create_cropped_image_with_bbox(frame, detection_info):
     if cropped_img.size == 0:
         return None
     
-    # 切り抜き画像内での相対座標に変換
-    relative_x1 = x1 - crop_x1
-    relative_y1 = y1 - crop_y1
-    relative_x2 = x2 - crop_x1
-    relative_y2 = y2 - crop_y1
+    # 四分割サイズにリサイズ
+    resized_img = cv2.resize(cropped_img, (target_width, target_height))
+    
+    # リサイズ後の画像でのバウンディングボックス座標を計算
+    scale_x = target_width / (crop_x2 - crop_x1)
+    scale_y = target_height / (crop_y2 - crop_y1)
+    
+    # リサイズ後の相対座標
+    relative_x1 = int((x1 - crop_x1) * scale_x)
+    relative_y1 = int((y1 - crop_y1) * scale_y)
+    relative_x2 = int((x2 - crop_x1) * scale_x)
+    relative_y2 = int((y2 - crop_y1) * scale_y)
     
     # バウンディングボックスを描画
-    cv2.rectangle(cropped_img, (relative_x1, relative_y1), (relative_x2, relative_y2), (0, 255, 0), 2)
+    cv2.rectangle(resized_img, (relative_x1, relative_y1), (relative_x2, relative_y2), (0, 255, 0), 2)
     
-    # ラベルと信頼度のテキストを追加
+    # ラベルと信頼度のテキストを追加（フォントサイズを調整）
     text = f"{label}: {confidence:.3f}"
-    cv2.putText(cropped_img, text, (relative_x1, relative_y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+    font_scale = min(target_width, target_height) / 600  # サイズに応じてフォントサイズを調整
+    cv2.putText(resized_img, text, (relative_x1, relative_y1-10), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 0), 2)
     
-    return cropped_img
+    return resized_img
 
 while True:
     ret, frame = cap.read()
