@@ -95,8 +95,8 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
         # バウンディングボックスを描画
         cv2.rectangle(annotated_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
         
-        # ラベルと信頼度のテキストを追加（ターゲットに統一）
-        text = f"ターゲット: {confidence:.3f}"
+        # ラベルと信頼度のテキストを追加（targetに統一）
+        text = f"target: {confidence:.3f}"
         cv2.putText(annotated_img, text, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
     
     # ファイル名を生成（検出数も含める）
@@ -167,8 +167,8 @@ def create_cropped_image_with_bbox(frame, detection_info, target_width, target_h
     # バウンディングボックスを描画
     cv2.rectangle(resized_img, (relative_x1, relative_y1), (relative_x2, relative_y2), (0, 255, 0), 2)
     
-    # ラベルと信頼度のテキストを追加（フォントサイズを調整、ターゲットに統一）
-    text = f"ターゲット: {confidence:.3f}"
+    # ラベルと信頼度のテキストを追加（フォントサイズを調整、targetに統一）
+    text = f"target: {confidence:.3f}"
     font_scale = min(target_width, target_height) / 600  # サイズに応じてフォントサイズを調整
     cv2.putText(resized_img, text, (relative_x1, relative_y1-10), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 0), 2)
     
@@ -184,7 +184,8 @@ while True:
 
     # 推論
     results = model(frame)
-    annotated_frame = results[0].plot()
+    # カスタムアノテーション用にフレームをコピー
+    annotated_frame = frame.copy()
     detection_count = 0
 
     # 信頼度・ラベル付きで検出結果を収集
@@ -196,8 +197,8 @@ while True:
             x1, y1, x2, y2 = map(int, box.xyxy[0])
             confidence = float(box.conf[0])  # 信頼度
             cls_id = int(box.cls[0]) if hasattr(box, 'cls') else -1
-            # ラベル名を「ターゲット」に変更
-            label = "ターゲット"  # 元のラベル名に関わらず「ターゲット」に統一
+            # ラベル名を「target」に変更
+            label = "target"  # 元のラベル名に関わらず「target」に統一
             crop = frame[max(0, y1):max(0, y2), max(0, x1):max(0, x2)]
             if crop.size > 0:
                 detections_with_confidence.append({
@@ -210,6 +211,18 @@ while True:
 
     # 信頼度でソート（高い順）
     detections_with_confidence.sort(key=lambda x: x['confidence'], reverse=True)
+    
+    # 右上パネル用：カスタムアノテーションを適用
+    for detection in detections_with_confidence:
+        x1, y1, x2, y2 = detection['box']
+        confidence = detection['confidence']
+        
+        # バウンディングボックスを描画
+        cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        
+        # ラベルと信頼度のテキストを追加（targetに統一）
+        text = f"target: {confidence:.3f}"
+        cv2.putText(annotated_frame, text, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
 
     # 左上用：従来通り、もっとも高い信頼度を選択
     if detections_with_confidence:
@@ -261,7 +274,7 @@ while True:
         status_text = "PAUSED" if leftup_paused else "PLAYING"
         cv2.putText(panel_lu, status_text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0) if not leftup_paused else (0, 0, 255), 2)
         if leftup_info and 'confidence' in leftup_info:
-            conf_text = f"ターゲット: {leftup_info['confidence']:.3f}"
+            conf_text = f"target: {leftup_info['confidence']:.3f}"
             cv2.putText(panel_lu, conf_text, (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
     else:
         panel_lu = np.zeros((half_h, half_w, 3), dtype=np.uint8)
@@ -274,7 +287,7 @@ while True:
     if leftdown_image is not None:
         panel_ld = cv2.resize(leftdown_image, (half_w, half_h))
         if leftdown_info and 'confidence' in leftdown_info:
-            conf_text = f"ターゲット: {leftdown_info['confidence']:.3f}"
+            conf_text = f"target: {leftdown_info['confidence']:.3f}"
             cv2.putText(panel_ld, conf_text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
     else:
         panel_ld = np.zeros((half_h, half_w, 3), dtype=np.uint8)
@@ -285,7 +298,7 @@ while True:
     if detections_with_confidence:
         info_lines.append(f'検出数: {len(detections_with_confidence)}')
         if len(detections_with_confidence) >= 1:
-            info_lines.append(f'左上(1): ターゲット {detections_with_confidence[0]["confidence"]:.3f}')
+            info_lines.append(f'左上(1): target {detections_with_confidence[0]["confidence"]:.3f}')
         if len(detections_with_confidence) >= 2:
             if leftup_info:
                 # ラベルが「ターゲット」に統一されているため、単純に2番目の検出を選択
@@ -294,7 +307,7 @@ while True:
                     sec = same_label[1]
                 else:
                     sec = detections_with_confidence[1]
-                info_lines.append(f'左下(2): ターゲット {sec["confidence"]:.3f}')
+                info_lines.append(f'左下(2): target {sec["confidence"]:.3f}')
     else:
         info_lines.append('No Detection')
     info_lines.append(f'フレーム: {leftup_frame_count}')
