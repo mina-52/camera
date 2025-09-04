@@ -109,24 +109,24 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
     print(f"画像を保存しました: {session_folder}/{filename} (検出物体数: {detection_count})")
     save_counter += 1
     
-    # 2. 左上の画像を個別保存（四分割サイズに拡大、バウンディングボックス付き）
+    # 2. 右上の画像を個別保存（元の左上、四分割サイズに拡大、バウンディングボックス付き）
     if leftup_info:
         leftup_crop = create_cropped_image_with_bbox(frame, leftup_info, half_w, half_h)
         if leftup_crop is not None:
-            leftup_filename = f"detection_frame{frame_count}_leftup_{leftup_info['label']}_{leftup_info['confidence']:.3f}.jpg"
+            leftup_filename = f"detection_frame{frame_count}_rightup_{leftup_info['label']}_{leftup_info['confidence']:.3f}.jpg"
             leftup_filepath = os.path.join(session_folder, leftup_filename)
             cv2.imwrite(leftup_filepath, leftup_crop)
-            print(f"左上画像を保存しました: {leftup_filename}")
+            print(f"右上画像を保存しました: {leftup_filename}")
             save_counter += 1
     
-    # 3. 左下の画像を個別保存（四分割サイズに拡大、バウンディングボックス付き）
+    # 3. 右下の画像を個別保存（元の左下、四分割サイズに拡大、バウンディングボックス付き）
     if leftdown_info:
         leftdown_crop = create_cropped_image_with_bbox(frame, leftdown_info, half_w, half_h)
         if leftdown_crop is not None:
-            leftdown_filename = f"detection_frame{frame_count}_leftdown_{leftdown_info['label']}_{leftdown_info['confidence']:.3f}.jpg"
+            leftdown_filename = f"detection_frame{frame_count}_rightdown_{leftdown_info['label']}_{leftdown_info['confidence']:.3f}.jpg"
             leftdown_filepath = os.path.join(session_folder, leftdown_filename)
             cv2.imwrite(leftdown_filepath, leftdown_crop)
-            print(f"左下画像を保存しました: {leftdown_filename}")
+            print(f"右下画像を保存しました: {leftdown_filename}")
             save_counter += 1
 
 def create_cropped_image_with_bbox(frame, detection_info, target_width, target_height):
@@ -283,7 +283,7 @@ while True:
     if detections_with_confidence:
         info_lines.append(f'検出数: {len(detections_with_confidence)}')
         if len(detections_with_confidence) >= 1:
-            info_lines.append(f'左上(1): {detections_with_confidence[0]["label"]} {detections_with_confidence[0]["confidence"]:.3f}')
+            info_lines.append(f'右上(1): {detections_with_confidence[0]["label"]} {detections_with_confidence[0]["confidence"]:.3f}')
         if len(detections_with_confidence) >= 2:
             if leftup_info:
                 same_label = [d for d in detections_with_confidence if d['label'] == leftup_info['label']]
@@ -291,16 +291,16 @@ while True:
                     sec = same_label[1]
                 else:
                     sec = detections_with_confidence[1]
-                info_lines.append(f'左下(2): {sec["label"]} {sec["confidence"]:.3f}')
+                info_lines.append(f'右下(2): {sec["label"]} {sec["confidence"]:.3f}')
     else:
         info_lines.append('No Detection')
     info_lines.append(f'フレーム: {leftup_frame_count}')
     info_lines.append(f'状態: {"一時停止" if leftup_paused else "再生中"}')
     for i, line in enumerate(info_lines):
         cv2.putText(panel_rd, line, (20, 60 + i*60), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 255), 3)
-    # 常に四分割で表示
-    top = np.hstack([panel_lu, panel_ru])
-    bottom = np.hstack([panel_ld, panel_rd])
+    # 常に四分割で表示（左右を入れ替え）
+    top = np.hstack([panel_ru, panel_lu])
+    bottom = np.hstack([panel_rd, panel_ld])
     combined = np.vstack([top, bottom])
     
     cv2.imshow('Detection Viewer', combined)
