@@ -93,9 +93,26 @@ Desktop.ini
 # *.pth
 # *.onnx
 
-# 動画ファイル
-akarui-ari.mp4
-akarui.mkv
-# *.mov
-# *.mp4
-# *.avi
+# 動画ファイル（すべて除外）
+*.mov
+*.MOV
+*.mp4
+*.MP4
+*.avi
+*.AVI
+*.mkv
+*.MKV
+*.wmv
+*.WMV
+*.flv
+*.FLV
+*.webm
+*.WEBM
+*.m4v
+*.M4V
+*.3gp
+*.3GP
+*.mpg
+*.MPG
+*.mpeg
+*.MPEG
