@@ -14,26 +14,26 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 cap.set(cv2.CAP_PROP_FPS, 30)
 
 if not cap.isOpened():
-    print("エラー: OBS仮想カメラを開けませんでした。")
-    print("OBSで「仮想カメラを開始」しているか、正しいカメラインデックスか確認してください。")
+    print("Error: Could not open OBS virtual camera.")
+    print("Please check if 'Start Virtual Camera' is enabled in OBS or verify the correct camera index.")
     exit()
 
 # sabiフォルダーの作成
 save_folder = "sabi"
 if not os.path.exists(save_folder):
     os.makedirs(save_folder)
-    print(f"フォルダーを作成しました: {save_folder}")
+    print(f"Created folder: {save_folder}")
 
 # 実行セッション用のフォルダーを作成（一回の実行につき一個）
 session_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 session_folder = os.path.join(save_folder, f"session_{session_timestamp}")
 os.makedirs(session_folder)
-print(f"セッションフォルダーを作成しました: {session_folder}")
+print(f"Created session folder: {session_folder}")
 
 # YOLOv8モデルのパス（sabi.ptで板検出を行う）
 model = YOLO('sabi.pt')  # sabi.ptで板を検出し、板領域内でHSV錆分析を実行
 
-print("錆検出リアルタイム認識を開始します。'q'キーで終了します。")
+print("Starting real-time rust detection. Press 'q' to exit.")
 
 # スクリーンサイズ取得（起動時に一度だけ）
 try:
@@ -226,7 +226,7 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
     
     # 画像を保存
     cv2.imwrite(filepath, annotated_img)
-    print(f"錆検出画像を保存しました: {filename} (検出錆数: {detection_count})")
+    print(f"Saved rust detection image: {filename} (Detected rust count: {detection_count})")
     save_counter += 1
     
     # 2. 各板の詳細な錆マスク画像を個別保存
@@ -284,36 +284,36 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
         plate_rust_filepath = os.path.join(session_folder, plate_rust_filename)
         cv2.imwrite(plate_rust_filepath, plate_with_rust)
         
-        print(f"板{plate_id}の錆分析画像を保存しました: {plate_rust_filename}")
+        print(f"Saved rust analysis image for plate {plate_id}: {plate_rust_filename}")
         save_counter += 2  # マスクと分析画像の2枚
     
     # 3. 詳細な分析結果をテキストファイルとして保存
     analysis_filename = f"rust_analysis_{session_timestamp}_{frame_count:06d}.txt"
     analysis_filepath = os.path.join(session_folder, analysis_filename)
     with open(analysis_filepath, 'w', encoding='utf-8') as f:
-        f.write(f"錆検出分析結果 - フレーム {frame_count}\n")
-        f.write(f"検出日時: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-        f.write(f"検出板数: {rust_analysis.get('detected_plates', 0)}\n")
-        f.write(f"錆の総個数: {rust_analysis['rust_count']}\n")
-        f.write(f"錆の総面積 (ピクセル): {rust_analysis['total_rust_area']:.0f}\n")
-        f.write(f"全体錆割合 (%): {rust_analysis['rust_ratio']:.2f}\n")
-        f.write(f"板の基準面積 (mm²): {rust_analysis['board_area']}\n")
-        f.write("\n=== 板別詳細情報 ===\n")
+        f.write(f"Rust Detection Analysis Results - Frame {frame_count}\n")
+        f.write(f"Detection Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"Detected Plates: {rust_analysis.get('detected_plates', 0)}\n")
+        f.write(f"Total Rust Count: {rust_analysis['rust_count']}\n")
+        f.write(f"Total Rust Area (pixels): {rust_analysis['total_rust_area']:.0f}\n")
+        f.write(f"Overall Rust Ratio (%): {rust_analysis['rust_ratio']:.2f}\n")
+        f.write(f"Plate Reference Area (mm²): {rust_analysis['board_area']}\n")
+        f.write("\n=== Plate-by-Plate Details ===\n")
         
         for detail in rust_analysis.get('rust_details', []):
-            f.write(f"\n板 {detail['plate_id']}:\n")
-            f.write(f"  位置: ({detail['plate_box'][0]}, {detail['plate_box'][1]}) - ({detail['plate_box'][2]}, {detail['plate_box'][3]})\n")
-            f.write(f"  板面積: {detail['plate_area']:.0f} ピクセル\n")
-            f.write(f"  錆スポット数: {detail['rust_contours_count']}\n")
-            f.write(f"  錆面積: {detail['rust_area']:.0f} ピクセル\n")
-            f.write(f"  錆割合: {detail['rust_ratio']:.2f}%\n")
+            f.write(f"\nPlate {detail['plate_id']}:\n")
+            f.write(f"  Position: ({detail['plate_box'][0]}, {detail['plate_box'][1]}) - ({detail['plate_box'][2]}, {detail['plate_box'][3]})\n")
+            f.write(f"  Plate Area: {detail['plate_area']:.0f} pixels\n")
+            f.write(f"  Rust Spots: {detail['rust_contours_count']}\n")
+            f.write(f"  Rust Area: {detail['rust_area']:.0f} pixels\n")
+            f.write(f"  Rust Ratio: {detail['rust_ratio']:.2f}%\n")
         
-        f.write("\n=== YOLO検出情報 ===\n")
+        f.write("\n=== YOLO Detection Info ===\n")
         for i, detection in enumerate(detections_with_confidence):
-            f.write(f"検出 {i+1}: {detection['label']} (信頼度: {detection['confidence']:.3f})\n")
-            f.write(f"  位置: ({detection['box'][0]}, {detection['box'][1]}) - ({detection['box'][2]}, {detection['box'][3]})\n")
+            f.write(f"Detection {i+1}: {detection['label']} (Confidence: {detection['confidence']:.3f})\n")
+            f.write(f"  Position: ({detection['box'][0]}, {detection['box'][1]}) - ({detection['box'][2]}, {detection['box'][3]})\n")
     
-    print(f"詳細分析結果を保存しました: {analysis_filename}")
+    print(f"Saved detailed analysis results: {analysis_filename}")
 
 def create_cropped_image_with_bbox(frame, detection_info, target_width, target_height):
     """検出情報から切り抜き画像とバウンディングボックスを生成（指定サイズにリサイズ）"""
@@ -364,7 +364,7 @@ def create_cropped_image_with_bbox(frame, detection_info, target_width, target_h
 while True:
     ret, frame = cap.read()
     if not ret:
-        print("エラー: フレームを読み込めませんでした。")
+        print("Error: Could not read frame.")
         break
 
     now = time.time()
@@ -473,19 +473,19 @@ while True:
     
     if detections_with_confidence:
         # 基本情報
-        info_lines.append(f'検出板数: {rust_analysis.get("detected_plates", 0)}')
-        info_lines.append(f'錆スポット数: {rust_analysis["rust_count"]}')
-        info_lines.append(f'総錆面積: {rust_analysis["total_rust_area"]:.0f}px')
-        info_lines.append(f'錆割合: {rust_analysis["rust_ratio"]:.2f}%')
+        info_lines.append(f'Detected Plates: {rust_analysis.get("detected_plates", 0)}')
+        info_lines.append(f'Rust Spots: {rust_analysis["rust_count"]}')
+        info_lines.append(f'Total Rust Area: {rust_analysis["total_rust_area"]:.0f}px')
+        info_lines.append(f'Rust Ratio: {rust_analysis["rust_ratio"]:.2f}%')
         
         # 板別詳細情報（最大2板まで表示）
         rust_details = rust_analysis.get('rust_details', [])
         for i, detail in enumerate(rust_details[:2]):  # 最大2板まで
-            info_lines.append(f'板{detail["plate_id"]}: {detail["rust_contours_count"]}個 {detail["rust_ratio"]:.1f}%')
+            info_lines.append(f'Plate{detail["plate_id"]}: {detail["rust_contours_count"]} spots {detail["rust_ratio"]:.1f}%')
         
         # YOLO検出情報（最大2個まで）
         if len(detections_with_confidence) >= 1:
-            info_lines.append(f'検出1: {detections_with_confidence[0]["label"]} {detections_with_confidence[0]["confidence"]:.3f}')
+            info_lines.append(f'Detection1: {detections_with_confidence[0]["label"]} {detections_with_confidence[0]["confidence"]:.3f}')
         if len(detections_with_confidence) >= 2:
             if leftup_info:
                 same_label = [d for d in detections_with_confidence if d['label'] == leftup_info['label']]
@@ -493,13 +493,13 @@ while True:
                     sec = same_label[1]
                 else:
                     sec = detections_with_confidence[1]
-                info_lines.append(f'検出2: {sec["label"]} {sec["confidence"]:.3f}')
+                info_lines.append(f'Detection2: {sec["label"]} {sec["confidence"]:.3f}')
     else:
-        info_lines.append('錆検出なし')
+        info_lines.append('No Rust Detected')
     
-    info_lines.append(f'フレーム: {leftup_frame_count}')
-    info_lines.append(f'状態: {"一時停止" if leftup_paused else "再生中"}')
-    info_lines.append('Enter: 保存/再生')
+    info_lines.append(f'Frame: {leftup_frame_count}')
+    info_lines.append(f'Status: {"Paused" if leftup_paused else "Playing"}')
+    info_lines.append('Enter: Save/Play')
     
     # フォントサイズを調整して表示
     font_scale = 0.8
@@ -544,18 +544,18 @@ while True:
                     'label': candidate['label']
                 }
             leftup_paused = False
-            print("再生を再開しました")
+            print("Resumed playback")
         else:
             # 再生中の場合：一時停止
             leftup_paused = True
-            print("一時停止しました")
+            print("Paused")
             # 一時停止時に検出画像を保存
             if detections_with_confidence:
                 save_detection_images(frame, detections_with_confidence, leftup_frame_count, leftup_info, leftdown_info, rust_analysis)
-                print(f"錆検出画像と分析結果を保存しました（合計: {save_counter}枚）")
+                print(f"Saved rust detection images and analysis results (Total: {save_counter} files)")
 
 cap.release()
 cv2.destroyAllWindows()
-print("錆検出を終了しました。")
-print(f"保存された画像の総数: {save_counter}枚")
-print(f"保存先フォルダー: {session_folder}")
+print("Rust detection completed.")
+print(f"Total saved images: {save_counter} files")
+print(f"Save folder: {session_folder}")

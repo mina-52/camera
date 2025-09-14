@@ -109,24 +109,24 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
     print(f"画像を保存しました: {session_folder}/{filename} (検出物体数: {detection_count})")
     save_counter += 1
     
-    # 2. 左上の画像を個別保存（四分割サイズに拡大、バウンディングボックス付き）
+    # 2. 右上の画像を個別保存（元の左上、四分割サイズに拡大、バウンディングボックス付き）
     if leftup_info:
         leftup_crop = create_cropped_image_with_bbox(frame, leftup_info, half_w, half_h)
         if leftup_crop is not None:
-            leftup_filename = f"detection_frame{frame_count}_leftup_{leftup_info['label']}_{leftup_info['confidence']:.3f}.jpg"
+            leftup_filename = f"detection_frame{frame_count}_rightup_{leftup_info['label']}_{leftup_info['confidence']:.3f}.jpg"
             leftup_filepath = os.path.join(session_folder, leftup_filename)
             cv2.imwrite(leftup_filepath, leftup_crop)
-            print(f"左上画像を保存しました: {leftup_filename}")
+            print(f"右上画像を保存しました: {leftup_filename}")
             save_counter += 1
     
-    # 3. 左下の画像を個別保存（四分割サイズに拡大、バウンディングボックス付き）
+    # 3. 右下の画像を個別保存（元の左下、四分割サイズに拡大、バウンディングボックス付き）
     if leftdown_info:
         leftdown_crop = create_cropped_image_with_bbox(frame, leftdown_info, half_w, half_h)
         if leftdown_crop is not None:
-            leftdown_filename = f"detection_frame{frame_count}_leftdown_{leftdown_info['label']}_{leftdown_info['confidence']:.3f}.jpg"
+            leftdown_filename = f"detection_frame{frame_count}_rightdown_{leftdown_info['label']}_{leftdown_info['confidence']:.3f}.jpg"
             leftdown_filepath = os.path.join(session_folder, leftdown_filename)
             cv2.imwrite(leftdown_filepath, leftdown_crop)
-            print(f"左下画像を保存しました: {leftdown_filename}")
+            print(f"右下画像を保存しました: {leftdown_filename}")
             save_counter += 1
 
 def create_cropped_image_with_bbox(frame, detection_info, target_width, target_height):
@@ -296,9 +296,9 @@ while True:
     panel_rd = np.zeros((half_h, half_w, 3), dtype=np.uint8)
     info_lines = []
     if detections_with_confidence:
-        info_lines.append(f'検出数: {len(detections_with_confidence)}')
+        info_lines.append(f'Detections: {len(detections_with_confidence)}')
         if len(detections_with_confidence) >= 1:
-            info_lines.append(f'左上(1): target {detections_with_confidence[0]["confidence"]:.3f}')
+            info_lines.append(f'Top-Right(1): target {detections_with_confidence[0]["confidence"]:.3f}')
         if len(detections_with_confidence) >= 2:
             if leftup_info:
                 # ラベルが「ターゲット」に統一されているため、単純に2番目の検出を選択
@@ -307,16 +307,16 @@ while True:
                     sec = same_label[1]
                 else:
                     sec = detections_with_confidence[1]
-                info_lines.append(f'左下(2): target {sec["confidence"]:.3f}')
+                info_lines.append(f'Bottom-Left(2): target {sec["confidence"]:.3f}')
     else:
         info_lines.append('No Detection')
-    info_lines.append(f'フレーム: {leftup_frame_count}')
-    info_lines.append(f'状態: {"一時停止" if leftup_paused else "再生中"}')
+    info_lines.append(f'Frame: {leftup_frame_count}')
+    info_lines.append(f'Status: {"Paused" if leftup_paused else "Playing"}')
     for i, line in enumerate(info_lines):
         cv2.putText(panel_rd, line, (20, 60 + i*60), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 255), 3)
-    # 常に四分割で表示
-    top = np.hstack([panel_lu, panel_ru])
-    bottom = np.hstack([panel_ld, panel_rd])
+    # 常に四分割で表示（左右を入れ替え）
+    top = np.hstack([panel_ru, panel_lu])
+    bottom = np.hstack([panel_rd, panel_ld])
     combined = np.vstack([top, bottom])
     
     cv2.imshow('Detection Viewer', combined)
@@ -350,15 +350,15 @@ while True:
                     'label': candidate['label']
                 }
             leftup_paused = False
-            print("再生を再開しました")
+            print("Resumed playback")
         else:
             # 再生中の場合：一時停止
             leftup_paused = True
-            print("一時停止しました")
+            print("Paused")
             # 一時停止時に検出画像を保存
             if detections_with_confidence:
                 save_detection_images(frame, detections_with_confidence, leftup_frame_count, leftup_info, leftdown_info)
-                print(f"一時停止時の検出画像を保存しました（合計: {save_counter}枚）")
+                print(f"Saved detection images during pause (Total: {save_counter} files)")
 
 cap.release()
 cv2.destroyAllWindows()
