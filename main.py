@@ -10,10 +10,10 @@ class ScriptManager:
         self.current_process = None
         self.current_script = None
         self.scripts = {
-            '1': 'pretest-mv.py',
-            '2': 'sabi2.py',
-            '3': 'cameratest.py',
-            '4': 'test2.py',
+            '1': 'randoruto-number.py',
+            '2': 'randoruto.py',
+            '3': 'sabi-obs.py',
+            '4': 'kikenbutu.py',
             '5': 'drone_detection copy.py'
         }
         self.running = True
