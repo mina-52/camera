@@ -19,8 +19,8 @@ if not cap.isOpened():
     print("OBSで「仮想カメラを開始」しているか、正しいカメラインデックスか確認してください。")
     exit()
 
-# randoruto-numberフォルダーの作成
-save_folder = "randoruto-number"
+# randoruto-number-subフォルダーの作成
+save_folder = "randoruto-number-sub"
 if not os.path.exists(save_folder):
     os.makedirs(save_folder)
     print(f"フォルダーを作成しました: {save_folder}")
@@ -31,8 +31,8 @@ session_folder = os.path.join(save_folder, f"session_{session_timestamp}")
 os.makedirs(session_folder)
 print(f"セッションフォルダーを作成しました: {session_folder}")
 
-# YOLOv8nモデルのパス
-model = YOLO('weights.pt')  # ここをあなたのモデルのパスに置き換えてください
+# YOLOv8nモデルのパス - target.ptを使用
+model = YOLO('target.pt')  # target.ptファイルを使用
 
 print("リアルタイム検出を開始します。'q'キーで終了します。")
 
@@ -50,9 +50,9 @@ except Exception:
 window_width = screen_width
 window_height = screen_height
 
-cv2.namedWindow('Detection Viewer', cv2.WINDOW_NORMAL)
-cv2.resizeWindow('Detection Viewer', window_width, window_height)
-cv2.setWindowProperty('Detection Viewer', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+cv2.namedWindow('Target Detection Viewer', cv2.WINDOW_NORMAL)
+cv2.resizeWindow('Target Detection Viewer', window_width, window_height)
+cv2.setWindowProperty('Target Detection Viewer', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
 # --- 四分割用の履歴リスト ---
 detected_history = []  # 検出物体の切り抜き履歴（最新が先頭）
@@ -95,13 +95,13 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
         # バウンディングボックスを描画
         cv2.rectangle(annotated_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
         
-        # ラベルと信頼度のテキストを追加（targetに統一）
-        text = f"target: {confidence:.3f}"
+        # ラベルと信頼度のテキストを追加
+        text = f"{label}: {confidence:.3f}"
         cv2.putText(annotated_img, text, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
     
     # ファイル名を生成（検出数も含める）
     detection_count = len(detections_with_confidence)
-    filename = f"detection_frame{frame_count}_{detection_count}objects.jpg"
+    filename = f"target_detection_frame{frame_count}_{detection_count}objects.jpg"
     filepath = os.path.join(session_folder, filename)
     
     # 画像を保存
@@ -113,7 +113,7 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
     if leftup_info:
         leftup_crop = create_cropped_image_with_bbox(frame, leftup_info, half_w, half_h)
         if leftup_crop is not None:
-            leftup_filename = f"detection_frame{frame_count}_rightup_{leftup_info['label']}_{leftup_info['confidence']:.3f}.jpg"
+            leftup_filename = f"target_detection_frame{frame_count}_rightup_{leftup_info['label']}_{leftup_info['confidence']:.3f}.jpg"
             leftup_filepath = os.path.join(session_folder, leftup_filename)
             cv2.imwrite(leftup_filepath, leftup_crop)
             print(f"右上画像を保存しました: {leftup_filename}")
@@ -123,7 +123,7 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
     if leftdown_info:
         leftdown_crop = create_cropped_image_with_bbox(frame, leftdown_info, half_w, half_h)
         if leftdown_crop is not None:
-            leftdown_filename = f"detection_frame{frame_count}_rightdown_{leftdown_info['label']}_{leftdown_info['confidence']:.3f}.jpg"
+            leftdown_filename = f"target_detection_frame{frame_count}_rightdown_{leftdown_info['label']}_{leftdown_info['confidence']:.3f}.jpg"
             leftdown_filepath = os.path.join(session_folder, leftdown_filename)
             cv2.imwrite(leftdown_filepath, leftdown_crop)
             print(f"右下画像を保存しました: {leftdown_filename}")
@@ -167,8 +167,8 @@ def create_cropped_image_with_bbox(frame, detection_info, target_width, target_h
     # バウンディングボックスを描画
     cv2.rectangle(resized_img, (relative_x1, relative_y1), (relative_x2, relative_y2), (0, 255, 0), 2)
     
-    # ラベルと信頼度のテキストを追加（フォントサイズを調整、targetに統一）
-    text = f"target: {confidence:.3f}"
+    # ラベルと信頼度のテキストを追加（フォントサイズを調整）
+    text = f"{label}: {confidence:.3f}"
     font_scale = min(target_width, target_height) / 600  # サイズに応じてフォントサイズを調整
     cv2.putText(resized_img, text, (relative_x1, relative_y1-10), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 0), 2)
     
@@ -184,8 +184,7 @@ while True:
 
     # 推論
     results = model(frame)
-    # カスタムアノテーション用にフレームをコピー
-    annotated_frame = frame.copy()
+    annotated_frame = results[0].plot()
     detection_count = 0
 
     # 信頼度・ラベル付きで検出結果を収集
@@ -197,8 +196,7 @@ while True:
             x1, y1, x2, y2 = map(int, box.xyxy[0])
             confidence = float(box.conf[0])  # 信頼度
             cls_id = int(box.cls[0]) if hasattr(box, 'cls') else -1
-            # ラベル名を「target」に変更
-            label = "target"  # 元のラベル名に関わらず「target」に統一
+            label = model.names[cls_id] if (cls_id in getattr(model, 'names', {})) else str(cls_id)
             crop = frame[max(0, y1):max(0, y2), max(0, x1):max(0, x2)]
             if crop.size > 0:
                 detections_with_confidence.append({
@@ -211,18 +209,6 @@ while True:
 
     # 信頼度でソート（高い順）
     detections_with_confidence.sort(key=lambda x: x['confidence'], reverse=True)
-    
-    # 右上パネル用：カスタムアノテーションを適用
-    for detection in detections_with_confidence:
-        x1, y1, x2, y2 = detection['box']
-        confidence = detection['confidence']
-        
-        # バウンディングボックスを描画
-        cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        
-        # ラベルと信頼度のテキストを追加（targetに統一）
-        text = f"target: {confidence:.3f}"
-        cv2.putText(annotated_frame, text, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
 
     # 左上用：従来通り、もっとも高い信頼度を選択
     if detections_with_confidence:
@@ -249,8 +235,7 @@ while True:
         if len(detections_with_confidence) >= 2:
             candidate = None
             if leftup_info and 'label' in leftup_info:
-                # ラベルが「ターゲット」に統一されているため、単純に2番目の検出を選択
-                same_label = detections_with_confidence  # 全てが「ターゲット」なのでそのまま使用
+                same_label = [d for d in detections_with_confidence if d['label'] == leftup_info['label']]
                 if len(same_label) >= 2:
                     candidate = same_label[1]
             if candidate is None:
@@ -271,14 +256,14 @@ while True:
     # 左上：従来通り（0.5秒ごと更新・一時停止可能）
     if leftup_image is not None:
         panel_lu = cv2.resize(leftup_image, (half_w, half_h))
-        status_text = "PAUSED" if leftup_paused else "PLAYING"
+        status_text = "PAUSED" if leftup_paused else "TARGET VIEW"
         cv2.putText(panel_lu, status_text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0) if not leftup_paused else (0, 0, 255), 2)
         if leftup_info and 'confidence' in leftup_info:
-            conf_text = f"target: {leftup_info['confidence']:.3f}"
+            conf_text = f"{leftup_info.get('label','')}: {leftup_info['confidence']:.3f}"
             cv2.putText(panel_lu, conf_text, (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
     else:
         panel_lu = np.zeros((half_h, half_w, 3), dtype=np.uint8)
-        cv2.putText(panel_lu, 'No Image', (40, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 3)
+        cv2.putText(panel_lu, 'No Target Image', (40, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 3)
 
     # 右上：検出中の画像（通常表示）
     panel_ru = cv2.resize(annotated_frame, (half_w, half_h))
@@ -286,32 +271,32 @@ while True:
     # 左下：二つ検出時のみ更新。無い場合は前回の画像を継続表示。
     if leftdown_image is not None:
         panel_ld = cv2.resize(leftdown_image, (half_w, half_h))
+        cv2.putText(panel_ld, "SECONDARY TARGET", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
         if leftdown_info and 'confidence' in leftdown_info:
-            conf_text = f"target: {leftdown_info['confidence']:.3f}"
-            cv2.putText(panel_ld, conf_text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+            conf_text = f"{leftdown_info.get('label','')}: {leftdown_info['confidence']:.3f}"
+            cv2.putText(panel_ld, conf_text, (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
     else:
         panel_ld = np.zeros((half_h, half_w, 3), dtype=np.uint8)
-        cv2.putText(panel_ld, 'No Image', (40, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 3)
+        cv2.putText(panel_ld, 'No Secondary Target', (40, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 3)
     # 右下：認識情報
     panel_rd = np.zeros((half_h, half_w, 3), dtype=np.uint8)
     info_lines = []
     if detections_with_confidence:
-        info_lines.append(f'Detections: {len(detections_with_confidence)}')
+        info_lines.append(f'Target Detections: {len(detections_with_confidence)}')
         if len(detections_with_confidence) >= 1:
-            info_lines.append(f'Top-Right(1): target {detections_with_confidence[0]["confidence"]:.3f}')
+            info_lines.append(f'Primary Target: {detections_with_confidence[0]["label"]} {detections_with_confidence[0]["confidence"]:.3f}')
         if len(detections_with_confidence) >= 2:
             if leftup_info:
-                # ラベルが「ターゲット」に統一されているため、単純に2番目の検出を選択
-                same_label = detections_with_confidence  # 全てが「ターゲット」なのでそのまま使用
+                same_label = [d for d in detections_with_confidence if d['label'] == leftup_info['label']]
                 if len(same_label) >= 2:
                     sec = same_label[1]
                 else:
                     sec = detections_with_confidence[1]
-                info_lines.append(f'Bottom-Left(2): target {sec["confidence"]:.3f}')
+                info_lines.append(f'Secondary Target: {sec["label"]} {sec["confidence"]:.3f}')
     else:
-        info_lines.append('No Detection')
+        info_lines.append('No Target Detection')
     info_lines.append(f'Frame: {leftup_frame_count}')
-    info_lines.append(f'Status: {"Paused" if leftup_paused else "Playing"}')
+    info_lines.append(f'Status: {"Paused" if leftup_paused else "Active"}')
     for i, line in enumerate(info_lines):
         cv2.putText(panel_rd, line, (20, 60 + i*60), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 255), 3)
     # 常に四分割で表示（左右を入れ替え）
@@ -319,7 +304,7 @@ while True:
     bottom = np.hstack([panel_rd, panel_ld])
     combined = np.vstack([top, bottom])
     
-    cv2.imshow('Detection Viewer', combined)
+    cv2.imshow('Target Detection Viewer', combined)
 
     key = cv2.waitKey(1) & 0xFF
     if key == ord('q'):
@@ -336,8 +321,7 @@ while True:
             if len(detections_with_confidence) >= 2:
                 candidate = None
                 if leftup_info and 'label' in leftup_info:
-                    # ラベルが「ターゲット」に統一されているため、単純に2番目の検出を選択
-                    same_label = detections_with_confidence  # 全てが「ターゲット」なのでそのまま使用
+                    same_label = [d for d in detections_with_confidence if d['label'] == leftup_info['label']]
                     if len(same_label) >= 2:
                         candidate = same_label[1]
                 if candidate is None:
@@ -350,21 +334,20 @@ while True:
                     'label': candidate['label']
                 }
             leftup_paused = False
-            print("Resumed playback")
+            print("Target detection resumed")
         else:
             # 再生中の場合：一時停止
             leftup_paused = True
-            print("Paused")
+            print("Target detection paused")
             # 一時停止時に検出画像を保存
             if detections_with_confidence:
                 save_detection_images(frame, detections_with_confidence, leftup_frame_count, leftup_info, leftdown_info)
-                print(f"Saved detection images during pause (Total: {save_counter} files)")
+                print(f"Saved target detection images during pause (Total: {save_counter} files)")
 
 cap.release()
 cv2.destroyAllWindows()
-print("検出を終了しました。")
+print("ターゲット検出を終了しました。")
 print(f"保存された画像の総数: {save_counter}枚")
 print(f"保存先フォルダー: {session_folder}")
 
 
-  
