@@ -76,7 +76,12 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
     """一時停止時に検出画像を保存する関数"""
     global save_counter, session_folder
     
+    print(f"デバッグ: save_detection_images関数が呼び出されました")
+    print(f"デバッグ: frame_count = {frame_count}")
+    print(f"デバッグ: session_folder = {session_folder}")
+    
     if not detections_with_confidence:
+        print("デバッグ: 検出物体がないため関数を終了します")
         return
     
     # セッションフォルダーが存在することを確認
@@ -110,10 +115,14 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
     filepath = os.path.join(session_folder, filename)
     
     # 画像を保存
-    cv2.imwrite(filepath, annotated_img)
-    print(f"画像を保存しました: {filepath} (検出物体数: {detection_count})")
-    print(f"セッションフォルダー: {session_folder}")
-    save_counter += 1
+    print(f"デバッグ: 画像保存を試行します - {filepath}")
+    success = cv2.imwrite(filepath, annotated_img)
+    if success:
+        print(f"画像を保存しました: {filepath} (検出物体数: {detection_count})")
+        print(f"セッションフォルダー: {session_folder}")
+        save_counter += 1
+    else:
+        print(f"エラー: 画像の保存に失敗しました - {filepath}")
     
     # 2. 右上の画像を個別保存（元の左上、四分割サイズに拡大、バウンディングボックス付き）
     if leftup_info:
@@ -346,9 +355,13 @@ while True:
             leftup_paused = True
             print("Target detection paused")
             # 一時停止時に検出画像を保存
+            print(f"デバッグ: 検出物体数 = {len(detections_with_confidence)}")
             if detections_with_confidence:
+                print("デバッグ: 保存処理を開始します")
                 save_detection_images(frame, detections_with_confidence, leftup_frame_count, leftup_info, leftdown_info)
                 print(f"Saved target detection images during pause (Total: {save_counter} files)")
+            else:
+                print("デバッグ: 検出物体がないため保存をスキップしました")
 
 cap.release()
 cv2.destroyAllWindows()
