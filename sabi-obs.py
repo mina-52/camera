@@ -302,7 +302,7 @@ def mark_rust_on_detected_image(image, detection_info, target_width, target_heig
         hsv = cv2.cvtColor(marked_image, cv2.COLOR_BGR2HSV)
         
         # 錆っぽい色範囲でマスクを作成
-        lower_brown = np.array([5, 80, 40])    # H, S, V の下限
+        lower_brown = np.array([3, 57, 20])    # H, S, V の下限
         upper_brown = np.array([20, 255, 200]) # H, S, V の上限
         rust_mask = cv2.inRange(hsv, lower_brown, upper_brown)
         
@@ -337,7 +337,7 @@ def mark_rust_on_detected_image(image, detection_info, target_width, target_heig
             rust_count += 1
             
             # 錆のサイズを分類（2分別）
-            if area < 1000:
+            if area < 500:
                 rust_size = "S"
                 rust_color = (0, 255, 255)    # 黄色
                 line_thickness = 2
@@ -440,7 +440,7 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
         
         # HSV変換して錆検出
         hsv = cv2.cvtColor(plate_region, cv2.COLOR_BGR2HSV)
-        lower_brown = np.array([5, 80, 40])
+        lower_brown = np.array([3, 57, 20])
         upper_brown = np.array([20, 255, 200])
         temp_mask = cv2.inRange(hsv, lower_brown, upper_brown)
         
@@ -737,7 +737,7 @@ while True:
                         area = cv2.contourArea(cnt)
                         if area < 30:  # 最小面積フィルタ
                             continue
-                        if area < 1000:
+                        if area < 500:
                             small_count += 1
                         else:
                             large_count += 1
