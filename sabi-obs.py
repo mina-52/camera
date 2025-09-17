@@ -67,8 +67,6 @@ leftup_frame_count = 0  # フレームカウンター
 leftdown_rust_mask = None
 leftdown_rust_info = None
 
-# --- 錆マーキング済み画像の保存用 ---
-leftup_marked_image = None  # マーキング済み画像を保存
 
 # --- 保存用のカウンター ---
 save_counter = 0
@@ -339,7 +337,7 @@ def mark_rust_on_detected_image(image, detection_info, target_width, target_heig
             rust_count += 1
             
             # 錆のサイズを分類（2分別）
-            if area < 200:
+            if area < 1000:
                 rust_size = "S"
                 rust_color = (0, 255, 255)    # 黄色
                 line_thickness = 2
@@ -468,7 +466,7 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
             rust_contour_count += 1
             
             # 錆のサイズを分類（2分別）
-            if area < 200:
+            if area < 1000:
                 rust_size = "SMALL"
                 rust_color = (0, 255, 255)    # 黄色
                 line_thickness = 2
@@ -661,29 +659,28 @@ while True:
     half_w = max(1, window_width // 2)
     half_h = max(1, window_height // 2)
 
-    # 左上の更新（YOLO検出時のみ、一時停止中でない場合）
+    # 左上の更新（新しい検出があった場合のみ、一時停止中でない場合）
     if not leftup_paused and detected_history:
-        # YOLO検出があった場合のみ更新
+        # 新しい検出があった場合のみ更新
         leftup_image = detected_history[0].copy()
         leftup_info = detected_info
         leftup_frame_count += 1
-        
-        # 錆マーキング済み画像を生成して保存（確実にサイズを指定）
-        leftup_marked_image = mark_rust_on_detected_image(leftup_image, leftup_info, half_w, half_h)
-        print(f"Updated marked image for frame {leftup_frame_count}")
 
-        # 左下はrust_mask用として空けておく（pause時のみ更新）
-        # pause時以外は前回のrust_mask表示を継続
+        # 左下用錆マスクは後で設定（pause時など）
 
-    # 左上：錆マーキング強化版（YOLO検出時更新・一時停止可能）
-    if leftup_marked_image is not None:
-        # 保存されたマーキング済み画像を使用（マーキングを完全保持）
-        panel_lu = cv2.resize(leftup_marked_image, (half_w, half_h))
+    # 左上：錆をマークした画像表示（一時停止可能）
+    if leftup_image is not None:
+        # 錆をマークした画像を作成
+        marked_image = mark_rust_on_detected_image(leftup_image, leftup_info, half_w, half_h)
+        panel_lu = cv2.resize(marked_image, (half_w, half_h))
         
+        # pause状態を表示
         status_text = "PAUSED" if leftup_paused else "RUST ANALYSIS"
+        status_color = (0, 0, 255) if leftup_paused else (0, 255, 0)
+        
         # 背景付きでステータステキストを表示
         cv2.rectangle(panel_lu, (15, 15), (300, 55), (0, 0, 0), -1)
-        cv2.putText(panel_lu, status_text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0) if not leftup_paused else (0, 0, 255), 2)
+        cv2.putText(panel_lu, status_text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, status_color, 2)
         
         if leftup_info and 'confidence' in leftup_info:
             conf_text = f"{leftup_info.get('label','')}: {leftup_info['confidence']:.3f}"
@@ -710,6 +707,8 @@ while True:
             cv2.putText(panel_ld, info_text, (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
             area_text = f"Area: {leftdown_rust_info.get('rust_area', 0):.0f}px"
             cv2.putText(panel_ld, area_text, (20, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            ratio_text = f"Ratio: {leftdown_rust_info.get('rust_ratio', 0):.2f}%"
+            cv2.putText(panel_ld, ratio_text, (20, 140), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
     else:
         panel_ld = np.zeros((half_h, half_w, 3), dtype=np.uint8)
         cv2.putText(panel_ld, 'Pause to Show Rust Mask', (20, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (200, 200, 200), 2)
@@ -738,7 +737,7 @@ while True:
                         area = cv2.contourArea(cnt)
                         if area < 30:  # 最小面積フィルタ
                             continue
-                        if area < 200:
+                        if area < 1000:
                             small_count += 1
                         else:
                             large_count += 1
@@ -791,22 +790,19 @@ while True:
     key = cv2.waitKey(1) & 0xFF
     if key == ord('q'):
         break
-    elif key == 13:  # エンターキー（ASCII: 13）
+    elif key == 13:  # エンターキー（ASCII: 13） - 左上一時停止/再開
         if leftup_paused:
             # 一時停止中の場合：現在のフレームまで飛ばす
             if detected_history:
                 leftup_image = detected_history[0].copy()
                 leftup_info = detected_info
                 leftup_frame_count += 1
-                # マーキング済み画像も更新
-                leftup_marked_image = mark_rust_on_detected_image(leftup_image, leftup_info, half_w, half_h)
-                print(f"Updated marked image on resume for frame {leftup_frame_count}")
             leftup_paused = False
-            print("Resumed playback")
+            print("Left-up display resumed")
         else:
             # 再生中の場合：一時停止
             leftup_paused = True
-            print("Paused")
+            print("Left-up display paused")
             
             # 一時停止時にrust_maskを左下に表示するため更新
             if rust_analysis and rust_analysis.get('rust_details'):
@@ -816,6 +812,7 @@ while True:
                 leftdown_rust_info = {
                     'rust_count': first_plate_detail.get('rust_contours_count', 0),
                     'rust_area': first_plate_detail.get('rust_area', 0),
+                    'rust_ratio': first_plate_detail.get('rust_ratio', 0),
                     'plate_id': first_plate_detail.get('plate_id', 1)
                 }
                 print(f"Updated rust mask for left-down panel (Plate {leftdown_rust_info['plate_id']})")
