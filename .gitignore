@@ -1,7 +1,7 @@
-# randorutoフォルダーをすべて対象にする
+# 画像保存フォルダーをすべて対象にする
 randoruto/
-
-# sabiフォルダーをすべて対象にする
+randoruto-number/
+randoruto-number-sub/
 sabi/
 
 # Python関連
@@ -116,3 +116,44 @@ Desktop.ini
 *.MPG
 *.mpeg
 *.MPEG
+
+# 画像ファイル（写真・スクリーンショット等）
+*.jpg
+*.JPG
+*.jpeg
+*.JPEG
+*.png
+*.PNG
+*.gif
+*.GIF
+*.bmp
+*.BMP
+*.tiff
+*.TIFF
+*.tif
+*.TIF
+*.webp
+*.WEBP
+*.svg
+*.SVG
+*.ico
+*.ICO
+*.raw
+*.RAW
+*.cr2
+*.CR2
+*.nef
+*.NEF
+*.arw
+*.ARW
+*.dng
+*.DNG
+*.heic
+*.HEIC
+*.heif
+*.HEIF
+
+# 画像関連のテキストファイル
+*_analysis*.txt
+*detection*.txt
+*rust*.txt
