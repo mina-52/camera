@@ -222,7 +222,7 @@ def mark_rust_on_frame(frame, rust_analysis):
             
             # sabi-M.pyスタイルの適応的面積フィルタ（画像サイズに応じて調整）
             plate_area_pixels = (x2 - x1) * (y2 - y1)
-            min_area = max(10, plate_area_pixels // 1000)  # 板サイズに応じた最小面積
+            min_area = max(10, plate_area_pixels // 10000)  # 板サイズに応じた最小面積
             max_area = plate_area_pixels // 2  # 板の1/2以下に増加（より大きな錆も検出）
             
             if area < min_area or area > max_area:
