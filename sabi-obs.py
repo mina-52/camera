@@ -67,6 +67,9 @@ leftup_frame_count = 0  # フレームカウンター
 leftdown_rust_mask = None
 leftdown_rust_info = None
 
+# --- 錆マーキング済み画像の保存用 ---
+leftup_marked_image = None  # マーキング済み画像を保存
+
 # --- 保存用のカウンター ---
 save_counter = 0
 
@@ -660,6 +663,9 @@ while True:
         leftup_image = detected_history[0].copy()
         leftup_info = detected_info
         leftup_frame_count += 1
+        
+        # 錆マーキング済み画像を生成して保存
+        leftup_marked_image = mark_rust_on_detected_image(leftup_image, leftup_info, half_w, half_h)
 
         # 左下はrust_mask用として空けておく（pause時のみ更新）
         # pause時以外は前回のrust_mask表示を継続
@@ -669,10 +675,9 @@ while True:
     half_h = max(1, window_height // 2)
 
     # 左上：錆マーキング強化版（YOLO検出時更新・一時停止可能）
-    if leftup_image is not None:
-        # sabi-M.pyスタイルの錆マーキングを適用
-        marked_leftup = mark_rust_on_detected_image(leftup_image, leftup_info, half_w, half_h)
-        panel_lu = cv2.resize(marked_leftup, (half_w, half_h))
+    if leftup_marked_image is not None:
+        # 保存されたマーキング済み画像を使用
+        panel_lu = cv2.resize(leftup_marked_image, (half_w, half_h))
         
         status_text = "PAUSED" if leftup_paused else "RUST ANALYSIS"
         # 背景付きでステータステキストを表示
@@ -685,7 +690,7 @@ while True:
             cv2.putText(panel_lu, conf_text, (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
     else:
         panel_lu = np.zeros((half_h, half_w, 3), dtype=np.uint8)
-        cv2.putText(panel_lu, 'No Rust Detected', (40, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 3)
+        cv2.putText(panel_lu, 'No Detection Yet', (40, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 3)
 
     # 右上：検出中の画像（YOLOバウンディングボックス表示）
     panel_ru = cv2.resize(annotated_frame, (half_w, half_h))
@@ -792,6 +797,8 @@ while True:
                 leftup_image = detected_history[0].copy()
                 leftup_info = detected_info
                 leftup_frame_count += 1
+                # マーキング済み画像も更新
+                leftup_marked_image = mark_rust_on_detected_image(leftup_image, leftup_info, half_w, half_h)
             leftup_paused = False
             print("Resumed playback")
         else:
