@@ -1,3 +1,4 @@
+
 import cv2
 import numpy as np
 from ultralytics import YOLO
@@ -96,11 +97,10 @@ leftup_image = None
 leftup_info = None
 leftup_paused = False  # 一時停止フラグ
 leftup_frame_count = 0  # フレームカウンター
-last_frame_time = time.time()  # 最後のフレーム更新時間
 
-# --- 左下用の変数（左上と同期） ---
-leftdown_image = None
-leftdown_info = None
+# --- 左下用の変数（錆マスク表示用） ---
+leftdown_rust_mask = None
+leftdown_rust_info = None
 
 # --- 保存用のカウンター ---
 save_counter = 0
@@ -161,7 +161,7 @@ def analyze_rust_area_detailed(frame, plate_detections):
                 continue
             
             # 面積フィルタ (小さすぎ/大きすぎを除外)
-            if area < 30 or area > 5000:
+            if area < 30 or area > 10000:  # 最大面積を5000から10000に増加
                 continue
             
             # 円形度フィルタ
@@ -224,7 +224,7 @@ def create_rust_mask(frame, detections_with_confidence):
     
     return mask_colored
 
-def save_detection_images(frame, detections_with_confidence, frame_count, leftup_info, leftdown_info, rust_analysis):
+def save_detection_images(frame, detections_with_confidence, frame_count, leftup_info, leftdown_rust_info, rust_analysis):
     """一時停止時に検出画像を保存する関数"""
     global save_counter
     
@@ -300,7 +300,7 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
             area = cv2.contourArea(cnt)
             perimeter = cv2.arcLength(cnt, True)
             
-            if perimeter == 0 or area < 30 or area > 5000:
+            if perimeter == 0 or area < 30 or area > 10000:  # 最大面積を5000から10000に増加
                 continue
                 
             circularity = 4 * np.pi * (area / (perimeter * perimeter))
@@ -308,15 +308,63 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
                 continue
             
             rust_contour_count += 1
-            cv2.drawContours(plate_with_rust, [cnt], -1, (0, 0, 255), 2)  # 赤枠
             
-            # 錆番号を表示
+            # 錆のサイズを分類（2分別）
+            if area < 1000:
+                rust_size = "SMALL"
+                rust_color = (0, 255, 255)    # 黄色
+                line_thickness = 2
+                marker_radius = 8
+                font_scale = 0.7
+            else:
+                rust_size = "LARGE"
+                rust_color = (0, 0, 255)      # 赤
+                line_thickness = 4
+                marker_radius = 12
+                font_scale = 0.8
+            
+            # サイズに応じた錆の輪郭を描画
+            cv2.drawContours(plate_with_rust, [cnt], -1, rust_color, line_thickness)
+            
+            # 錆領域を半透明で塗りつぶし（サイズに応じて色を変更）
+            rust_overlay = plate_with_rust.copy()
+            cv2.fillPoly(rust_overlay, [cnt], rust_color)
+            plate_with_rust = cv2.addWeighted(plate_with_rust, 0.8, rust_overlay, 0.2, 0)
+            
+            # 錆の中心にサイズ別マーカーを追加
             M = cv2.moments(cnt)
             if M["m00"] != 0:
                 cx = int(M["m10"]/M["m00"])
                 cy = int(M["m01"]/M["m00"])
-                cv2.putText(plate_with_rust, str(rust_contour_count), (cx-10, cy), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
+                
+                # サイズに応じた円形マーカー
+                cv2.circle(plate_with_rust, (cx, cy), marker_radius, (255, 255, 255), -1)  # 白い背景円
+                cv2.circle(plate_with_rust, (cx, cy), marker_radius, (0, 0, 0), 2)         # 黒い枠線
+                
+                # 錆番号とサイズを表示
+                text = f"{rust_size}-{rust_contour_count}"
+                thickness = 2
+                
+                # テキストサイズを取得
+                (text_width, text_height), baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+                
+                # 背景の矩形を描画（白背景、サイズ色の枠）
+                bg_x1 = cx - text_width // 2 - 5
+                bg_y1 = cy - 30 - text_height
+                bg_x2 = cx + text_width // 2 + 5
+                bg_y2 = cy - 30 + baseline
+                
+                cv2.rectangle(plate_with_rust, (bg_x1, bg_y1), (bg_x2, bg_y2), (255, 255, 255), -1)  # 白背景
+                cv2.rectangle(plate_with_rust, (bg_x1, bg_y1), (bg_x2, bg_y2), rust_color, 2)       # サイズ色の枠
+                
+                # テキストを描画
+                cv2.putText(plate_with_rust, text, (cx - text_width // 2, cy - 30), 
+                           cv2.FONT_HERSHEY_SIMPLEX, font_scale, rust_color, thickness)
+                
+                # 面積も小さく表示
+                area_text = f"{area}px"
+                cv2.putText(plate_with_rust, area_text, (cx - 20, cy + 20), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, rust_color, 1)
         
         # 板上の錆分析画像を保存
         plate_rust_filename = f"plate_{plate_id}_rust_analysis_{session_timestamp}_{frame_count:06d}.jpg"
@@ -434,7 +482,7 @@ def mark_rust_on_image(image, detection_info, target_width, target_height):
             
             # 面積フィルタ (画像サイズに応じて調整)
             min_area = max(10, (target_width * target_height) // 10000)  # 画像サイズに応じた最小面積
-            max_area = (target_width * target_height) // 4  # 画像の1/4以下
+            max_area = (target_width * target_height) // 2  # 画像の1/2以下に増加
             
             if area < min_area or area > max_area:
                 continue
@@ -446,20 +494,43 @@ def mark_rust_on_image(image, detection_info, target_width, target_height):
             
             rust_count += 1
             
-            # 錆の輪郭を赤で描画（太い線）
-            cv2.drawContours(marked_image, [cnt], -1, (0, 0, 255), 3)
+            # 錆のサイズを分類（2分別）
+            if area < 1000:
+                rust_size = "S"
+                rust_color = (0, 255, 255)    # 黄色
+                line_thickness = 2
+                radius = 15
+                font_scale = 0.7
+            else:
+                rust_size = "L"
+                rust_color = (0, 0, 255)      # 赤
+                line_thickness = 4
+                radius = 18
+                font_scale = 0.8
             
-            # 錆の中心に番号を表示
+            # サイズに応じた錆の輪郭を描画
+            cv2.drawContours(marked_image, [cnt], -1, rust_color, line_thickness)
+            
+            # 錆の中心にサイズ別マーカーを表示
             M = cv2.moments(cnt)
             if M["m00"] != 0:
                 cx = int(M["m10"]/M["m00"])
                 cy = int(M["m01"]/M["m00"])
-                # 番号の背景を描画
-                cv2.circle(marked_image, (cx, cy), 15, (255, 255, 255), -1)
-                cv2.circle(marked_image, (cx, cy), 15, (0, 0, 255), 2)
-                # 番号を描画
-                cv2.putText(marked_image, str(rust_count), (cx-8, cy+5), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                
+                # サイズに応じた背景円
+                cv2.circle(marked_image, (cx, cy), radius, (255, 255, 255), -1)  # 白い背景
+                cv2.circle(marked_image, (cx, cy), radius, rust_color, 2)        # サイズ色の縁取り
+                
+                # 番号とサイズを描画
+                rust_text = f"{rust_size}{rust_count}"
+                thickness = 2
+                
+                (text_width, text_height), baseline = cv2.getTextSize(rust_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+                text_x = cx - text_width // 2
+                text_y = cy + text_height // 2
+                
+                cv2.putText(marked_image, rust_text, (text_x, text_y), 
+                           cv2.FONT_HERSHEY_SIMPLEX, font_scale, rust_color, thickness)
         
         # 錆の総数表示は削除（文字なし）
         
@@ -535,67 +606,63 @@ while True:
     else:
         detected_info = None
 
-    # 左上/左下のフレーム更新（0.5秒ごと、一時停止中でない場合）
-    if not leftup_paused and (now - last_frame_time > 0.5):
-        if detected_history:
-            leftup_image = detected_history[0].copy()
-            leftup_info = detected_info
-            leftup_frame_count += 1
-            last_frame_time = now
+    # 左上の更新（新しい検出があった場合のみ、一時停止中でない場合）
+    if not leftup_paused and detected_history:
+        # 新しい検出があった場合のみ更新
+        leftup_image = detected_history[0].copy()
+        leftup_info = detected_info
+        leftup_frame_count += 1
 
-        # 左下も左上の更新タイミングに同期
-        # 二重検出があるときのみ更新。無いときは前回の表示を維持。
-        if len(detections_with_confidence) >= 2:
-            candidate = None
-            if leftup_info and 'label' in leftup_info:
-                same_label = [d for d in detections_with_confidence if d['label'] == leftup_info['label']]
-                if len(same_label) >= 2:
-                    candidate = same_label[1]
-            if candidate is None:
-                candidate = detections_with_confidence[1]
-            leftdown_image = candidate['crop'].copy()
-            leftdown_info = {
-                'box': candidate['box'],
-                'confidence': candidate['confidence'],
-                'cls_id': candidate['cls_id'],
-                'label': candidate['label']
-            }
+        # 左下用錆マスクは後で設定（pause時など）
 
     # 四分割パネル作成
     half_w = max(1, window_width // 2)
     half_h = max(1, window_height // 2)
 
-    # 左上：錆をマークした画像のみ表示（文字なし）
+    # 左上：錆をマークした画像表示（一時停止可能）
     if leftup_image is not None:
         # 錆をマークした画像を作成
         marked_image = mark_rust_on_image(leftup_image, leftup_info, half_w, half_h)
         panel_lu = cv2.resize(marked_image, (half_w, half_h))
+        
+        # pause状態を表示
+        status_text = "PAUSED" if leftup_paused else "RUST ANALYSIS"
+        status_color = (0, 0, 255) if leftup_paused else (0, 255, 0)
+        
+        # 背景付きでステータステキストを表示
+        cv2.rectangle(panel_lu, (15, 15), (300, 55), (0, 0, 0), -1)
+        cv2.putText(panel_lu, status_text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, status_color, 2)
+        
+        if leftup_info and 'confidence' in leftup_info:
+            conf_text = f"{leftup_info.get('label','')}: {leftup_info['confidence']:.3f}"
+            cv2.rectangle(panel_lu, (15, 60), (350, 100), (0, 0, 0), -1)
+            cv2.putText(panel_lu, conf_text, (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
     else:
         panel_lu = np.zeros((half_h, half_w, 3), dtype=np.uint8)
+        cv2.putText(panel_lu, 'No Detection Yet', (40, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 3)
 
     # 右上：検出中の画像（通常表示）
     panel_ru = cv2.resize(annotated_frame, (half_w, half_h))
 
-    # 左下：二つ検出時のみ更新。錆をマークして表示。
-    if leftdown_image is not None:
-        # 錆をマークした画像を作成
-        marked_image_ld = mark_rust_on_image(leftdown_image, leftdown_info, half_w, half_h)
-        panel_ld = cv2.resize(marked_image_ld, (half_w, half_h))
+    # 左下：錆マスク表示用（pause時に更新される）
+    if leftdown_rust_mask is not None:
+        # rust_maskを3チャンネルのカラー画像に変換
+        rust_mask_color = cv2.cvtColor(leftdown_rust_mask, cv2.COLOR_GRAY2BGR)
+        # 錆部分を赤色で強調
+        rust_mask_color[leftdown_rust_mask > 0] = [0, 0, 255]  # 赤色
         
-        if leftdown_info and 'confidence' in leftdown_info:
-            # 検出情報を表示
-            label = leftdown_info.get('label', '')
-            confidence = leftdown_info['confidence']
-            conf_text = f"{label}: {confidence:.3f}"
-            # 背景を追加してテキストを見やすくする
-            cv2.rectangle(panel_ld, (15, 55), (280, 95), (0, 0, 0), -1)
-            cv2.putText(panel_ld, conf_text, (20, 75), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-            # 追加情報を英語で表示
-            cv2.putText(panel_ld, "Secondary Detection", (20, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+        panel_ld = cv2.resize(rust_mask_color, (half_w, half_h))
+        cv2.putText(panel_ld, "RUST MASK", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
+        if leftdown_rust_info:
+            info_text = f"Spots: {leftdown_rust_info.get('rust_count', 0)}"
+            cv2.putText(panel_ld, info_text, (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            area_text = f"Area: {leftdown_rust_info.get('rust_area', 0):.0f}px"
+            cv2.putText(panel_ld, area_text, (20, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            ratio_text = f"Ratio: {leftdown_rust_info.get('rust_ratio', 0):.2f}%"
+            cv2.putText(panel_ld, ratio_text, (20, 140), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
     else:
         panel_ld = np.zeros((half_h, half_w, 3), dtype=np.uint8)
-        cv2.putText(panel_ld, 'No Secondary Detection', (20, half_h//2-10), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (200, 200, 200), 2)
-        cv2.putText(panel_ld, 'Waiting for 2nd object...', (20, half_h//2+30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (150, 150, 150), 2)
+        cv2.putText(panel_ld, 'Pause to Show Rust Mask', (20, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (200, 200, 200), 2)
     
     # 右下：認識情報と詳細錆分析結果
     panel_rd = np.zeros((half_h, half_w, 3), dtype=np.uint8)
@@ -652,12 +719,39 @@ while True:
     
     if key == ord('q'):
         break
-    elif key == 13:  # エンターキー（ASCII: 13） - 検出結果保存
-        if detections_with_confidence:
-            save_detection_images(frame, detections_with_confidence, current_frame_pos, leftup_info, leftdown_info, rust_analysis)
-            print(f"Rust detection images and analysis saved (Frame: {current_frame_pos}, Total: {save_counter} files)")
+    elif key == 13:  # エンターキー（ASCII: 13） - 左上一時停止/再開
+        if leftup_paused:
+            # 一時停止中の場合：現在のフレームまで飛ばす
+            if detected_history:
+                leftup_image = detected_history[0].copy()
+                leftup_info = detected_info
+                leftup_frame_count += 1
+            leftup_paused = False
+            print("Left-up display resumed")
         else:
-            print("No detection results to save.")
+            # 再生中の場合：一時停止
+            leftup_paused = True
+            print("Left-up display paused")
+            
+            # 一時停止時に錆マスクを左下に表示するため更新
+            if rust_analysis and rust_analysis.get('rust_details'):
+                # 最初の板のrust_maskを使用
+                first_plate_detail = rust_analysis['rust_details'][0]
+                leftdown_rust_mask = first_plate_detail.get('rust_mask')
+                leftdown_rust_info = {
+                    'rust_count': first_plate_detail.get('rust_contours_count', 0),
+                    'rust_area': first_plate_detail.get('rust_area', 0),
+                    'rust_ratio': first_plate_detail.get('rust_ratio', 0),
+                    'plate_id': first_plate_detail.get('plate_id', 1)
+                }
+                print(f"Updated rust mask for left-down panel (Plate {leftdown_rust_info['plate_id']})")
+            
+            # 一時停止時に検出画像を保存
+            if detections_with_confidence:
+                save_detection_images(frame, detections_with_confidence, current_frame_pos, leftup_info, leftdown_rust_info, rust_analysis)
+                print(f"Rust detection images and analysis saved (Frame: {current_frame_pos}, Total: {save_counter} files)")
+            else:
+                print("No detection results to save.")
     elif key == ord(' '):  # スペースキー - 動画の一時停止/再生
         video_paused = not video_paused
         status = "paused" if video_paused else "playing"
