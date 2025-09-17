@@ -74,10 +74,15 @@ save_counter = 0
 
 def save_detection_images(frame, detections_with_confidence, frame_count, leftup_info, leftdown_info):
     """一時停止時に検出画像を保存する関数"""
-    global save_counter
+    global save_counter, session_folder
     
     if not detections_with_confidence:
         return
+    
+    # セッションフォルダーが存在することを確認
+    if not os.path.exists(session_folder):
+        os.makedirs(session_folder)
+        print(f"セッションフォルダーを作成しました: {session_folder}")
     
     # 四分割サイズを計算
     half_w = max(1, window_width // 2)
@@ -106,7 +111,8 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
     
     # 画像を保存
     cv2.imwrite(filepath, annotated_img)
-    print(f"画像を保存しました: {session_folder}/{filename} (検出物体数: {detection_count})")
+    print(f"画像を保存しました: {filepath} (検出物体数: {detection_count})")
+    print(f"セッションフォルダー: {session_folder}")
     save_counter += 1
     
     # 2. 右上の画像を個別保存（元の左上、四分割サイズに拡大、バウンディングボックス付き）
