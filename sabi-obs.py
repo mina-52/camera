@@ -288,6 +288,7 @@ def mark_rust_on_frame(frame, rust_analysis):
     
     return marked_frame
 
+
 def mark_rust_on_detected_image(image, detection_info, target_width, target_height):
     """sabi-M.pyスタイルの検出された個別画像に錆をマーキングする関数"""
     if detection_info is None or image is None:
@@ -649,6 +650,7 @@ while True:
                 'cls_id': candidate['cls_id'],
                 'label': candidate['label']
             }
+        # else: 何もしない（継続表示）
 
     # 四分割パネル作成
     half_w = max(1, window_width // 2)
@@ -679,12 +681,13 @@ while True:
     # 左下：二つ検出時のみ更新。無い場合は前回の画像を継続表示。
     if leftdown_image is not None:
         panel_ld = cv2.resize(leftdown_image, (half_w, half_h))
+        cv2.putText(panel_ld, "SECONDARY TARGET", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
         if leftdown_info and 'confidence' in leftdown_info:
             conf_text = f"{leftdown_info.get('label','')}: {leftdown_info['confidence']:.3f}"
-            cv2.putText(panel_ld, conf_text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+            cv2.putText(panel_ld, conf_text, (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
     else:
         panel_ld = np.zeros((half_h, half_w, 3), dtype=np.uint8)
-        cv2.putText(panel_ld, 'No Secondary Rust', (40, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 3)
+        cv2.putText(panel_ld, 'No Secondary Target', (40, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 3)
     
     # 右下：認識情報と詳細錆分析結果
     panel_rd = np.zeros((half_h, half_w, 3), dtype=np.uint8)
