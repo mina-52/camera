@@ -62,7 +62,6 @@ leftup_image = None
 leftup_info = None
 leftup_paused = False  # 一時停止フラグ
 leftup_frame_count = 0  # フレームカウンター
-last_frame_time = time.time()  # 最後のフレーム更新時間
 
 # --- 左下用の変数（rust_mask表示用） ---
 leftdown_rust_mask = None
@@ -655,13 +654,12 @@ while True:
     else:
         detected_info = None
 
-    # 左上/左下のフレーム更新（0.5秒ごと、一時停止中でない場合）
-    if not leftup_paused and (now - last_frame_time > 0.5):
-        if detected_history:
-            leftup_image = detected_history[0].copy()
-            leftup_info = detected_info
-            leftup_frame_count += 1
-            last_frame_time = now
+    # 左上の更新（YOLO検出時のみ、一時停止中でない場合）
+    if not leftup_paused and detected_history:
+        # YOLO検出があった場合のみ更新
+        leftup_image = detected_history[0].copy()
+        leftup_info = detected_info
+        leftup_frame_count += 1
 
         # 左下はrust_mask用として空けておく（pause時のみ更新）
         # pause時以外は前回のrust_mask表示を継続
@@ -670,7 +668,7 @@ while True:
     half_w = max(1, window_width // 2)
     half_h = max(1, window_height // 2)
 
-    # 左上：錆マーキング強化版（0.5秒ごと更新・一時停止可能）
+    # 左上：錆マーキング強化版（YOLO検出時更新・一時停止可能）
     if leftup_image is not None:
         # sabi-M.pyスタイルの錆マーキングを適用
         marked_leftup = mark_rust_on_detected_image(leftup_image, leftup_info, half_w, half_h)
@@ -794,7 +792,6 @@ while True:
                 leftup_image = detected_history[0].copy()
                 leftup_info = detected_info
                 leftup_frame_count += 1
-                last_frame_time = now
             leftup_paused = False
             print("Resumed playback")
         else:
