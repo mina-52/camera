@@ -185,6 +185,188 @@ def create_rust_mask(frame, detections_with_confidence):
     
     return mask_colored
 
+def mark_rust_on_frame(frame, rust_analysis):
+    """フレーム上に錆を分かりやすくマーキングする関数"""
+    marked_frame = frame.copy()
+    
+    rust_details = rust_analysis.get('rust_details', [])
+    
+    for detail in rust_details:
+        plate_box = detail['plate_box']
+        x1, y1, x2, y2 = plate_box
+        plate_region = frame[y1:y2, x1:x2]
+        
+        if plate_region.size == 0:
+            continue
+            
+        # HSV変換して錆検出
+        hsv = cv2.cvtColor(plate_region, cv2.COLOR_BGR2HSV)
+        lower_brown = np.array([5, 80, 40])
+        upper_brown = np.array([20, 255, 200])
+        rust_mask = cv2.inRange(hsv, lower_brown, upper_brown)
+        
+        # ノイズ除去
+        kernel = np.ones((3,3), np.uint8)
+        rust_mask = cv2.morphologyEx(rust_mask, cv2.MORPH_OPEN, kernel)
+        
+        # 輪郭検出
+        contours, _ = cv2.findContours(rust_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        rust_count = 0
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            perimeter = cv2.arcLength(cnt, True)
+            
+            if perimeter == 0:
+                continue
+            
+            # sabi-M.pyスタイルの適応的面積フィルタ（画像サイズに応じて調整）
+            plate_area_pixels = (x2 - x1) * (y2 - y1)
+            min_area = max(10, plate_area_pixels // 1000)  # 板サイズに応じた最小面積
+            max_area = plate_area_pixels // 4  # 板の1/4以下
+            
+            if area < min_area or area > max_area:
+                continue
+            
+            # より緩い円形度フィルタ（sabi-M.pyから）
+            circularity = 4 * np.pi * (area / (perimeter * perimeter))
+            if circularity < 0.4:  # より緩い条件で多様な錆形状を検出
+                continue
+            
+            rust_count += 1
+            
+            # 元のフレーム座標系に変換
+            offset_cnt = cnt + np.array([x1, y1])
+            
+            # 錆領域を強調表示
+            # 1. 半透明の赤でハイライト
+            rust_overlay = marked_frame.copy()
+            cv2.fillPoly(rust_overlay, [offset_cnt], (0, 150, 255))  # 明るい赤
+            marked_frame = cv2.addWeighted(marked_frame, 0.8, rust_overlay, 0.2, 0)
+            
+            # 2. 太い赤い輪郭
+            cv2.drawContours(marked_frame, [offset_cnt], -1, (0, 0, 255), 4)
+            
+            # 3. 中心に目立つマーカー
+            M = cv2.moments(cnt)
+            if M["m00"] != 0:
+                cx = int(M["m10"]/M["m00"]) + x1
+                cy = int(M["m01"]/M["m00"]) + y1
+                
+                # 大きな黄色い×マーク
+                cv2.line(marked_frame, (cx-15, cy-15), (cx+15, cy+15), (0, 255, 255), 6)
+                cv2.line(marked_frame, (cx-15, cy+15), (cx+15, cy-15), (0, 255, 255), 6)
+                cv2.line(marked_frame, (cx-15, cy-15), (cx+15, cy+15), (0, 0, 0), 2)
+                cv2.line(marked_frame, (cx-15, cy+15), (cx+15, cy-15), (0, 0, 0), 2)
+                
+                # sabi-M.pyスタイルの改良された錆番号表示
+                # 大きな白い円の背景
+                cv2.circle(marked_frame, (cx, cy), 20, (255, 255, 255), -1)  # 白い背景円
+                cv2.circle(marked_frame, (cx, cy), 20, (0, 0, 255), 3)       # 赤い縁取り
+                
+                # 番号を大きく見やすく表示
+                rust_text = str(rust_count)
+                font_scale = 1.0
+                thickness = 2
+                
+                # テキストサイズを取得してセンタリング
+                (text_width, text_height), baseline = cv2.getTextSize(rust_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+                text_x = cx - text_width // 2
+                text_y = cy + text_height // 2
+                
+                # 番号を描画
+                cv2.putText(marked_frame, rust_text, (text_x, text_y), 
+                           cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 255), thickness)
+        
+        # 板のバウンディングボックスも強調
+        cv2.rectangle(marked_frame, (x1, y1), (x2, y2), (255, 255, 0), 3)  # 水色の枠
+        
+        # 板情報を表示
+        plate_text = f"PLATE-{detail['plate_id']} ({rust_count} rusts)"
+        cv2.putText(marked_frame, plate_text, (x1, y1-10), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
+    
+    return marked_frame
+
+def mark_rust_on_detected_image(image, detection_info, target_width, target_height):
+    """sabi-M.pyスタイルの検出された個別画像に錆をマーキングする関数"""
+    if detection_info is None or image is None:
+        return image
+    
+    # 画像のコピーを作成
+    marked_image = image.copy()
+    
+    try:
+        # HSV色空間に変換
+        hsv = cv2.cvtColor(marked_image, cv2.COLOR_BGR2HSV)
+        
+        # 錆っぽい色範囲でマスクを作成
+        lower_brown = np.array([5, 80, 40])    # H, S, V の下限
+        upper_brown = np.array([20, 255, 200]) # H, S, V の上限
+        rust_mask = cv2.inRange(hsv, lower_brown, upper_brown)
+        
+        # ノイズ除去
+        kernel = np.ones((3,3), np.uint8)
+        rust_mask = cv2.morphologyEx(rust_mask, cv2.MORPH_OPEN, kernel)
+        
+        # 輪郭検出
+        contours, _ = cv2.findContours(rust_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        # 有効な錆輪郭をフィルタリングして描画
+        rust_count = 0
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            perimeter = cv2.arcLength(cnt, True)
+            
+            if perimeter == 0:
+                continue
+            
+            # 画像サイズに応じた面積フィルタ（sabi-M.pyから）
+            min_area = max(10, (target_width * target_height) // 10000)
+            max_area = (target_width * target_height) // 4
+            
+            if area < min_area or area > max_area:
+                continue
+            
+            # より緩い円形度フィルタ
+            circularity = 4 * np.pi * (area / (perimeter * perimeter))
+            if circularity < 0.4:
+                continue
+            
+            rust_count += 1
+            
+            # 錆の輪郭を太い赤線で描画
+            cv2.drawContours(marked_image, [cnt], -1, (0, 0, 255), 3)
+            
+            # 錆の中心に番号を表示（sabi-M.pyスタイル）
+            M = cv2.moments(cnt)
+            if M["m00"] != 0:
+                cx = int(M["m10"]/M["m00"])
+                cy = int(M["m01"]/M["m00"])
+                
+                # 白い背景円に番号を表示
+                radius = 15
+                cv2.circle(marked_image, (cx, cy), radius, (255, 255, 255), -1)  # 白い背景
+                cv2.circle(marked_image, (cx, cy), radius, (0, 0, 255), 2)       # 赤い縁取り
+                
+                # 番号を描画
+                rust_text = str(rust_count)
+                font_scale = 0.7
+                thickness = 2
+                
+                (text_width, text_height), baseline = cv2.getTextSize(rust_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+                text_x = cx - text_width // 2
+                text_y = cy + text_height // 2
+                
+                cv2.putText(marked_image, rust_text, (text_x, text_y), 
+                           cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 255), thickness)
+        
+    except Exception as e:
+        print(f"Error in rust marking on detected image: {e}")
+        return marked_image
+    
+    return marked_image
+
 def save_detection_images(frame, detections_with_confidence, frame_count, leftup_info, leftdown_info, rust_analysis):
     """一時停止時に検出画像を保存する関数"""
     global save_counter
@@ -269,15 +451,45 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
                 continue
             
             rust_contour_count += 1
-            cv2.drawContours(plate_with_rust, [cnt], -1, (0, 0, 255), 2)  # 赤枠
             
-            # 錆番号を表示
+            # 錆の輪郭を太い赤線で強調
+            cv2.drawContours(plate_with_rust, [cnt], -1, (0, 0, 255), 3)  # 赤枠（太くした）
+            
+            # 錆領域を半透明の赤で塗りつぶし
+            rust_overlay = plate_with_rust.copy()
+            cv2.fillPoly(rust_overlay, [cnt], (0, 100, 255))  # 明るい赤で塗りつぶし
+            plate_with_rust = cv2.addWeighted(plate_with_rust, 0.7, rust_overlay, 0.3, 0)
+            
+            # 錆の中心に円形マーカーを追加
             M = cv2.moments(cnt)
             if M["m00"] != 0:
                 cx = int(M["m10"]/M["m00"])
                 cy = int(M["m01"]/M["m00"])
-                cv2.putText(plate_with_rust, str(rust_contour_count), (cx-10, cy), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
+                
+                # 大きな黄色い円で中心をマーク
+                cv2.circle(plate_with_rust, (cx, cy), 8, (0, 255, 255), -1)  # 黄色の塗りつぶし円
+                cv2.circle(plate_with_rust, (cx, cy), 8, (0, 0, 0), 2)      # 黒い枠線
+                
+                # 錆番号を大きく、背景付きで表示
+                text = f"RUST-{rust_contour_count}"
+                font_scale = 0.8
+                thickness = 2
+                
+                # テキストサイズを取得
+                (text_width, text_height), baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+                
+                # 背景の矩形を描画（白背景、黒枠）
+                bg_x1 = cx - text_width // 2 - 5
+                bg_y1 = cy - 25 - text_height
+                bg_x2 = cx + text_width // 2 + 5
+                bg_y2 = cy - 25 + baseline
+                
+                cv2.rectangle(plate_with_rust, (bg_x1, bg_y1), (bg_x2, bg_y2), (255, 255, 255), -1)  # 白背景
+                cv2.rectangle(plate_with_rust, (bg_x1, bg_y1), (bg_x2, bg_y2), (0, 0, 0), 1)        # 黒枠
+                
+                # テキストを描画
+                cv2.putText(plate_with_rust, text, (cx - text_width // 2, cy - 25), 
+                           cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 0, 0), thickness)
         
         # 板上の錆分析画像を保存
         plate_rust_filename = f"plate_{plate_id}_rust_analysis_{session_timestamp}_{frame_count:06d}.jpg"
@@ -442,20 +654,28 @@ while True:
     half_w = max(1, window_width // 2)
     half_h = max(1, window_height // 2)
 
-    # 左上：従来通り（0.5秒ごと更新・一時停止可能）
+    # 左上：錆マーキング強化版（0.5秒ごと更新・一時停止可能）
     if leftup_image is not None:
-        panel_lu = cv2.resize(leftup_image, (half_w, half_h))
-        status_text = "PAUSED" if leftup_paused else "PLAYING"
+        # sabi-M.pyスタイルの錆マーキングを適用
+        marked_leftup = mark_rust_on_detected_image(leftup_image, leftup_info, half_w, half_h)
+        panel_lu = cv2.resize(marked_leftup, (half_w, half_h))
+        
+        status_text = "PAUSED" if leftup_paused else "RUST ANALYSIS"
+        # 背景付きでステータステキストを表示
+        cv2.rectangle(panel_lu, (15, 15), (300, 55), (0, 0, 0), -1)
         cv2.putText(panel_lu, status_text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0) if not leftup_paused else (0, 0, 255), 2)
+        
         if leftup_info and 'confidence' in leftup_info:
             conf_text = f"{leftup_info.get('label','')}: {leftup_info['confidence']:.3f}"
+            cv2.rectangle(panel_lu, (15, 60), (350, 100), (0, 0, 0), -1)
             cv2.putText(panel_lu, conf_text, (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
     else:
         panel_lu = np.zeros((half_h, half_w, 3), dtype=np.uint8)
         cv2.putText(panel_lu, 'No Rust Detected', (40, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 3)
 
-    # 右上：検出中の画像（通常表示）
-    panel_ru = cv2.resize(annotated_frame, (half_w, half_h))
+    # 右上：検出中の画像（錆マーキング強化版）
+    enhanced_frame = mark_rust_on_frame(frame, rust_analysis)
+    panel_ru = cv2.resize(enhanced_frame, (half_w, half_h))
 
     # 左下：二つ検出時のみ更新。無い場合は前回の画像を継続表示。
     if leftdown_image is not None:
