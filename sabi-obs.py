@@ -657,6 +657,10 @@ while True:
     else:
         detected_info = None
 
+    # 四分割パネル作成
+    half_w = max(1, window_width // 2)
+    half_h = max(1, window_height // 2)
+
     # 左上の更新（YOLO検出時のみ、一時停止中でない場合）
     if not leftup_paused and detected_history:
         # YOLO検出があった場合のみ更新
@@ -664,19 +668,16 @@ while True:
         leftup_info = detected_info
         leftup_frame_count += 1
         
-        # 錆マーキング済み画像を生成して保存
+        # 錆マーキング済み画像を生成して保存（確実にサイズを指定）
         leftup_marked_image = mark_rust_on_detected_image(leftup_image, leftup_info, half_w, half_h)
+        print(f"Updated marked image for frame {leftup_frame_count}")
 
         # 左下はrust_mask用として空けておく（pause時のみ更新）
         # pause時以外は前回のrust_mask表示を継続
 
-    # 四分割パネル作成
-    half_w = max(1, window_width // 2)
-    half_h = max(1, window_height // 2)
-
     # 左上：錆マーキング強化版（YOLO検出時更新・一時停止可能）
     if leftup_marked_image is not None:
-        # 保存されたマーキング済み画像を使用
+        # 保存されたマーキング済み画像を使用（マーキングを完全保持）
         panel_lu = cv2.resize(leftup_marked_image, (half_w, half_h))
         
         status_text = "PAUSED" if leftup_paused else "RUST ANALYSIS"
@@ -799,6 +800,7 @@ while True:
                 leftup_frame_count += 1
                 # マーキング済み画像も更新
                 leftup_marked_image = mark_rust_on_detected_image(leftup_image, leftup_info, half_w, half_h)
+                print(f"Updated marked image on resume for frame {leftup_frame_count}")
             leftup_paused = False
             print("Resumed playback")
         else:
