@@ -64,13 +64,9 @@ leftup_paused = False  # 一時停止フラグ
 leftup_frame_count = 0  # フレームカウンター
 last_frame_time = time.time()  # 最後のフレーム更新時間
 
-# --- 左下用の変数（錆位置追跡・統合用） ---
-rust_tracking_data = []  # 錆位置の履歴データ
-rust_consolidated_positions = []  # 統合された錆位置
-MAX_TRACKING_FRAMES = 30  # 追跡するフレーム数
-POSITION_TOLERANCE = 50  # 位置の許容誤差（ピクセル）
-rust_tracking_active = False  # 錆位置追跡がアクティブかどうか
-tracking_start_frame = 0  # 追跡開始フレーム
+# --- 左下用の変数（左上と同期） ---
+leftdown_image = None
+leftdown_info = None
 
 # --- 保存用のカウンター ---
 save_counter = 0
@@ -292,214 +288,6 @@ def mark_rust_on_frame(frame, rust_analysis):
     
     return marked_frame
 
-def update_rust_tracking(rust_analysis, frame_count):
-    """錆位置追跡データを更新し、統合位置を計算する"""
-    global rust_tracking_data, rust_consolidated_positions
-    
-    current_frame_rusts = []
-    
-    # 現在のフレームの錆位置を収集
-    for detail in rust_analysis.get('rust_details', []):
-        plate_box = detail['plate_box']
-        x1, y1, x2, y2 = plate_box
-        
-        # 板内の錆位置を相対座標で記録
-        plate_region = (x2 - x1, y2 - y1)  # 板のサイズ
-        
-        # 簡易的に板の中心を錆位置として記録（実際にはHSV分析結果を使用）
-        rust_positions = []
-        
-        # この板での錆検出を実行して位置を取得
-        try:
-            # 板領域での錆検出結果から位置を抽出
-            rust_positions = extract_rust_positions_from_plate(detail, x1, y1)
-        except:
-            # エラー時は板の中心を使用
-            rust_positions = [(x1 + (x2-x1)//2, y1 + (y2-y1)//2)]
-        
-        for pos in rust_positions:
-            current_frame_rusts.append({
-                'position': pos,
-                'frame': frame_count,
-                'plate_id': detail['plate_id'],
-                'confidence': 1.0
-            })
-    
-    # 現在のフレームデータを追加
-    rust_tracking_data.append({
-        'frame': frame_count,
-        'rusts': current_frame_rusts
-    })
-    
-    # 古いデータを削除（指定フレーム数を超えた場合）
-    if len(rust_tracking_data) > MAX_TRACKING_FRAMES:
-        rust_tracking_data.pop(0)
-    
-    # 錆位置を統合
-    consolidate_rust_positions()
-
-def reset_rust_tracking():
-    """錆位置追跡データをリセット"""
-    global rust_tracking_data, rust_consolidated_positions, rust_tracking_active
-    rust_tracking_data = []
-    rust_consolidated_positions = []
-    rust_tracking_active = False
-    print("錆位置追跡データをリセットしました")
-
-def start_rust_tracking(frame_count):
-    """錆位置追跡を開始"""
-    global rust_tracking_active, tracking_start_frame
-    rust_tracking_active = True
-    tracking_start_frame = frame_count
-    print(f"錆位置追跡を開始しました (フレーム: {frame_count})")
-
-def extract_rust_positions_from_plate(plate_detail, offset_x, offset_y):
-    """板の詳細データから錆の実際の位置を抽出"""
-    positions = []
-    
-    try:
-        plate_region = plate_detail['plate_region']
-        rust_mask = plate_detail['rust_mask']
-        
-        # 輪郭検出で錆の中心位置を取得
-        contours, _ = cv2.findContours(rust_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
-        for cnt in contours:
-            area = cv2.contourArea(cnt)
-            if area < 30:  # 小さすぎる領域は除外
-                continue
-                
-            # 錆の中心位置を計算
-            M = cv2.moments(cnt)
-            if M["m00"] != 0:
-                cx = int(M["m10"]/M["m00"]) + offset_x
-                cy = int(M["m01"]/M["m00"]) + offset_y
-                positions.append((cx, cy))
-    except:
-        # エラー時は板の中心を返す
-        positions.append((offset_x + 50, offset_y + 50))
-    
-    return positions
-
-def consolidate_rust_positions():
-    """複数フレームの錆位置データを統合し、安定した位置を計算"""
-    global rust_consolidated_positions
-    
-    all_positions = []
-    
-    # 全フレームの錆位置を収集
-    for frame_data in rust_tracking_data:
-        for rust in frame_data['rusts']:
-            all_positions.append(rust['position'])
-    
-    if not all_positions:
-        rust_consolidated_positions = []
-        return
-    
-    # 位置をクラスタリング（近い位置をまとめる）
-    consolidated = []
-    used_positions = set()
-    
-    for i, pos1 in enumerate(all_positions):
-        if i in used_positions:
-            continue
-            
-        cluster = [pos1]
-        used_positions.add(i)
-        
-        # 近い位置を同じクラスターにまとめる
-        for j, pos2 in enumerate(all_positions):
-            if j in used_positions:
-                continue
-                
-            distance = np.sqrt((pos1[0] - pos2[0])**2 + (pos1[1] - pos2[1])**2)
-            if distance <= POSITION_TOLERANCE:
-                cluster.append(pos2)
-                used_positions.add(j)
-        
-        # クラスターの中心位置を計算
-        if cluster:
-            avg_x = sum(pos[0] for pos in cluster) // len(cluster)
-            avg_y = sum(pos[1] for pos in cluster) // len(cluster)
-            confidence = min(1.0, len(cluster) / 5.0)  # 検出回数に基づく信頼度
-            
-            consolidated.append({
-                'position': (avg_x, avg_y),
-                'count': len(cluster),
-                'confidence': confidence
-            })
-    
-    # 信頼度でソート
-    rust_consolidated_positions = sorted(consolidated, key=lambda x: x['confidence'], reverse=True)
-
-def create_rust_tracking_visualization(frame_shape):
-    """錆位置追跡の可視化画像を作成"""
-    vis_image = np.zeros((frame_shape[0], frame_shape[1], 3), dtype=np.uint8)
-    
-    # 追跡状態を表示
-    if rust_tracking_active:
-        status_text = "TRACKING ACTIVE"
-        status_color = (0, 255, 0)  # 緑色
-        frames_tracked = len(rust_tracking_data)
-        cv2.putText(vis_image, status_text, (10, 30), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 1.0, status_color, 2)
-        cv2.putText(vis_image, f"Frames: {frames_tracked}", (10, 60), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
-    else:
-        status_text = "TRACKING STOPPED"
-        status_color = (100, 100, 100)  # グレー
-        cv2.putText(vis_image, status_text, (10, 30), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 1.0, status_color, 2)
-        cv2.putText(vis_image, "Press ENTER to start", (10, 60), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
-    
-    # 統合された錆位置を描画
-    for i, rust_data in enumerate(rust_consolidated_positions[:10]):  # 最大10個まで表示
-        pos = rust_data['position']
-        count = rust_data['count']
-        confidence = rust_data['confidence']
-        
-        # 信頼度に応じて色を変更
-        if confidence > 0.8:
-            color = (0, 255, 0)  # 緑（高信頼度）
-        elif confidence > 0.5:
-            color = (0, 255, 255)  # 黄色（中信頼度）
-        else:
-            color = (0, 100, 255)  # オレンジ（低信頼度）
-        
-        # 錆位置を円で表示
-        radius = max(5, min(20, count * 2))
-        cv2.circle(vis_image, pos, radius, color, -1)
-        cv2.circle(vis_image, pos, radius + 2, (255, 255, 255), 2)
-        
-        # 番号を表示
-        cv2.putText(vis_image, str(i+1), (pos[0]-5, pos[1]+5), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-        
-        # 検出回数を表示
-        cv2.putText(vis_image, f"x{count}", (pos[0]+15, pos[1]-10), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
-    
-    # 統計情報を表示
-    if rust_consolidated_positions:
-        total_rusts = len(rust_consolidated_positions)
-        high_conf = len([r for r in rust_consolidated_positions if r['confidence'] > 0.8])
-        
-        info_text = [
-            f"Tracked Rusts: {total_rusts}",
-            f"High Confidence: {high_conf}",
-            f"Frames: {len(rust_tracking_data)}/{MAX_TRACKING_FRAMES}",
-            f"Tolerance: {POSITION_TOLERANCE}px"
-        ]
-        
-        for i, text in enumerate(info_text):
-            cv2.putText(vis_image, text, (10, 30 + i*25), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-    else:
-        cv2.putText(vis_image, "No Rust Positions Tracked", (10, 50), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 1.0, (100, 100, 100), 2)
-    
-    return vis_image
 
 def mark_rust_on_detected_image(image, detection_info, target_width, target_height):
     """sabi-M.pyスタイルの検出された個別画像に錆をマーキングする関数"""
@@ -824,10 +612,6 @@ while True:
 
     # 錆の面積分析を実行
     rust_analysis = analyze_rust_area(frame, detections_with_confidence)
-    
-    # 錆位置追跡を更新（アクティブ時のみ）
-    if rust_tracking_active:
-        update_rust_tracking(rust_analysis, leftup_frame_count)
 
     # 左上用：従来通り、もっとも高い信頼度を選択
     if detections_with_confidence:
@@ -849,7 +633,24 @@ while True:
             leftup_frame_count += 1
             last_frame_time = now
 
-        # 左下は錆位置追跡用に使用（従来の二重検出機能は削除）
+        # 左下も左上の更新タイミングに同期
+        # 二重検出があるときのみ更新。無いときは前回の表示を維持。
+        if len(detections_with_confidence) >= 2:
+            candidate = None
+            if leftup_info and 'label' in leftup_info:
+                same_label = [d for d in detections_with_confidence if d['label'] == leftup_info['label']]
+                if len(same_label) >= 2:
+                    candidate = same_label[1]
+            if candidate is None:
+                candidate = detections_with_confidence[1]
+            leftdown_image = candidate['crop'].copy()
+            leftdown_info = {
+                'box': candidate['box'],
+                'confidence': candidate['confidence'],
+                'cls_id': candidate['cls_id'],
+                'label': candidate['label']
+            }
+        # else: 何もしない（継続表示）
 
     # 四分割パネル作成
     half_w = max(1, window_width // 2)
@@ -877,9 +678,16 @@ while True:
     # 右上：検出中の画像（YOLOバウンディングボックス表示）
     panel_ru = cv2.resize(annotated_frame, (half_w, half_h))
 
-    # 左下：錆位置追跡・統合表示
-    rust_tracking_vis = create_rust_tracking_visualization(frame.shape)
-    panel_ld = cv2.resize(rust_tracking_vis, (half_w, half_h))
+    # 左下：二つ検出時のみ更新。無い場合は前回の画像を継続表示。
+    if leftdown_image is not None:
+        panel_ld = cv2.resize(leftdown_image, (half_w, half_h))
+        cv2.putText(panel_ld, "SECONDARY TARGET", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
+        if leftdown_info and 'confidence' in leftdown_info:
+            conf_text = f"{leftdown_info.get('label','')}: {leftdown_info['confidence']:.3f}"
+            cv2.putText(panel_ld, conf_text, (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+    else:
+        panel_ld = np.zeros((half_h, half_w, 3), dtype=np.uint8)
+        cv2.putText(panel_ld, 'No Secondary Target', (40, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 3)
     
     # 右下：認識情報と詳細錆分析結果
     panel_rd = np.zeros((half_h, half_w, 3), dtype=np.uint8)
@@ -892,24 +700,9 @@ while True:
         info_lines.append(f'Total Rust Area: {rust_analysis["total_rust_area"]:.0f}px')
         info_lines.append(f'Rust Ratio: {rust_analysis["rust_ratio"]:.2f}%')
         
-        # 錆位置追跡情報
-        tracking_status = "ACTIVE" if rust_tracking_active else "STOPPED"
-        info_lines.append(f'Tracking: {tracking_status}')
-        
-        if rust_consolidated_positions:
-            total_tracked = len(rust_consolidated_positions)
-            high_conf_tracked = len([r for r in rust_consolidated_positions if r['confidence'] > 0.8])
-            info_lines.append(f'Tracked: {total_tracked} ({high_conf_tracked} high)')
-        else:
-            if rust_tracking_active:
-                info_lines.append('Tracking... (No positions yet)')
-            else:
-                info_lines.append('Press ENTER to start tracking')
-        
-        # 板別詳細情報（最大1板まで表示、スペースを節約）
+        # 板別詳細情報（最大2板まで表示）
         rust_details = rust_analysis.get('rust_details', [])
-        if rust_details:
-            detail = rust_details[0]
+        for i, detail in enumerate(rust_details[:2]):  # 最大2板まで
             info_lines.append(f'Plate{detail["plate_id"]}: {detail["rust_contours_count"]} spots {detail["rust_ratio"]:.1f}%')
         
         # YOLO検出情報（最大2個まで）
@@ -948,20 +741,40 @@ while True:
     key = cv2.waitKey(1) & 0xFF
     if key == ord('q'):
         break
-    elif key == 13:  # エンターキー（ASCII: 13） - 錆位置追跡の開始/リセット
-        if not rust_tracking_active:
-            # 追跡が停止中の場合：追跡を開始
-            start_rust_tracking(leftup_frame_count)
+    elif key == 13:  # エンターキー（ASCII: 13）
+        if leftup_paused:
+            # 一時停止中の場合：現在のフレームまで飛ばす（左上・左下とも同期）
+            if detected_history:
+                leftup_image = detected_history[0].copy()
+                leftup_info = detected_info
+                leftup_frame_count += 1
+                last_frame_time = now
+            # 左下は、二重検出がある場合のみ更新。無い場合は前回の画像を保持。
+            if len(detections_with_confidence) >= 2:
+                candidate = None
+                if leftup_info and 'label' in leftup_info:
+                    same_label = [d for d in detections_with_confidence if d['label'] == leftup_info['label']]
+                    if len(same_label) >= 2:
+                        candidate = same_label[1]
+                if candidate is None:
+                    candidate = detections_with_confidence[1]
+                leftdown_image = candidate['crop'].copy()
+                leftdown_info = {
+                    'box': candidate['box'],
+                    'confidence': candidate['confidence'],
+                    'cls_id': candidate['cls_id'],
+                    'label': candidate['label']
+                }
+            leftup_paused = False
+            print("Resumed playback")
         else:
-            # 追跡が実行中の場合：リセット
-            reset_rust_tracking()
-            
-            # 現在の追跡結果を保存
-            if detections_with_confidence and rust_consolidated_positions:
-                save_detection_images(frame, detections_with_confidence, leftup_frame_count, leftup_info, None, rust_analysis)
-                print(f"保存完了: 検出画像と錆位置追跡結果 (ファイル数: {save_counter}, 追跡位置: {len(rust_consolidated_positions)})")
-            else:
-                print("追跡結果をリセットしました（保存データなし）")
+            # 再生中の場合：一時停止
+            leftup_paused = True
+            print("Paused")
+            # 一時停止時に検出画像を保存
+            if detections_with_confidence:
+                save_detection_images(frame, detections_with_confidence, leftup_frame_count, leftup_info, leftdown_info, rust_analysis)
+                print(f"Saved rust detection images and analysis results (Total: {save_counter} files)")
 
 cap.release()
 cv2.destroyAllWindows()
