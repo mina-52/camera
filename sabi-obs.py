@@ -121,13 +121,13 @@ def analyze_rust_area_detailed(frame, plate_detections):
             if perimeter == 0:
                 continue
             
-            # 面積フィルタ (小さすぎ/大きすぎを除外)
-            if area < 30 or area > 5000:
+            # 軽度に緩くした面積フィルタ (より多くの錆を検出)
+            if area < 15 or area > 7000:  # 最小面積を半分に、最大面積を拡大
                 continue
             
-            # 円形度フィルタ
+            # 軽度に緩くした円形度フィルタ
             circularity = 4 * np.pi * (area / (perimeter * perimeter))
-            if circularity < 0.6:  # 円に近いかどうか
+            if circularity < 0.4:  # やや不規則な形状も検出
                 continue
             
             valid_rust_contours.append(cnt)
@@ -321,16 +321,16 @@ def mark_rust_on_detected_image(image, detection_info, target_width, target_heig
             if perimeter == 0:
                 continue
             
-            # 画像サイズに応じた面積フィルタ（sabi-M.pyから）
-            min_area = max(10, (target_width * target_height) // 10000)
-            max_area = (target_width * target_height) // 4
+            # 軽度に緩くした面積フィルタ（小さい錆も検出、実用的範囲）
+            min_area = max(5, (target_width * target_height) // 15000)  # より小さい錆も検出
+            max_area = (target_width * target_height) // 3             # やや大きい錆も検出
             
             if area < min_area or area > max_area:
                 continue
             
-            # より緩い円形度フィルタ
+            # 軽度に緩くした円形度フィルタ（少し不規則な形状も検出）
             circularity = 4 * np.pi * (area / (perimeter * perimeter))
-            if circularity < 0.4:
+            if circularity < 0.3:  # やや不規則な錆形状も検出
                 continue
             
             rust_count += 1
@@ -443,11 +443,11 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
             area = cv2.contourArea(cnt)
             perimeter = cv2.arcLength(cnt, True)
             
-            if perimeter == 0 or area < 30 or area > 5000:
+            if perimeter == 0 or area < 15 or area > 7000:  # 軽度に緩くした面積条件
                 continue
                 
             circularity = 4 * np.pi * (area / (perimeter * perimeter))
-            if circularity < 0.6:
+            if circularity < 0.4:  # 軽度に緩くした円形度条件
                 continue
             
             rust_contour_count += 1
@@ -673,9 +673,8 @@ while True:
         panel_lu = np.zeros((half_h, half_w, 3), dtype=np.uint8)
         cv2.putText(panel_lu, 'No Rust Detected', (40, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 3)
 
-    # 右上：検出中の画像（錆マーキング強化版）
-    enhanced_frame = mark_rust_on_frame(frame, rust_analysis)
-    panel_ru = cv2.resize(enhanced_frame, (half_w, half_h))
+    # 右上：検出中の画像（YOLOバウンディングボックス表示）
+    panel_ru = cv2.resize(annotated_frame, (half_w, half_h))
 
     # 左下：二つ検出時のみ更新。無い場合は前回の画像を継続表示。
     if leftdown_image is not None:
