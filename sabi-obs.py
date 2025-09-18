@@ -99,7 +99,7 @@ def analyze_rust_area_detailed(frame, plate_detections):
         hsv = cv2.cvtColor(plate_region, cv2.COLOR_BGR2HSV)
         
         # 錆っぽい色範囲でマスクを作成
-        lower_brown = np.array([5, 80, 40])    # H, S, V の下限
+        lower_brown = np.array([0, 58, 11])    # H, S, V の下限
         upper_brown = np.array([20, 255, 200]) # H, S, V の上限
         rust_mask = cv2.inRange(hsv, lower_brown, upper_brown)
         
@@ -127,7 +127,7 @@ def analyze_rust_area_detailed(frame, plate_detections):
             
             # 円形度フィルタ
             circularity = 4 * np.pi * (area / (perimeter * perimeter))
-            if circularity < 0.6:  # 円に近いかどうか
+            if circularity < 0.4:  # 円に近いかどうか
                 continue
             
             valid_rust_contours.append(cnt)
@@ -201,13 +201,13 @@ def mark_rust_on_frame(frame, rust_analysis):
             
         # HSV変換して錆検出
         hsv = cv2.cvtColor(plate_region, cv2.COLOR_BGR2HSV)
-        lower_brown = np.array([5, 80, 40])
+        lower_brown = np.array([0, 58, 11])
         upper_brown = np.array([20, 255, 200])
         rust_mask = cv2.inRange(hsv, lower_brown, upper_brown)
         
         # ノイズ除去
-        kernel = np.ones((3,3), np.uint8)
-        rust_mask = cv2.morphologyEx(rust_mask, cv2.MORPH_OPEN, kernel)
+        #kernel = np.ones((3,3), np.uint8)
+        #rust_mask = cv2.morphologyEx(rust_mask, cv2.MORPH_OPEN, kernel)
         
         # 輪郭検出
         contours, _ = cv2.findContours(rust_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -302,13 +302,13 @@ def mark_rust_on_detected_image(image, detection_info, target_width, target_heig
         hsv = cv2.cvtColor(marked_image, cv2.COLOR_BGR2HSV)
         
         # 錆っぽい色範囲でマスクを作成
-        lower_brown = np.array([3, 57, 20])    # H, S, V の下限
+        lower_brown = np.array([0, 58, 11])    # H, S, V の下限
         upper_brown = np.array([20, 255, 200]) # H, S, V の上限
         rust_mask = cv2.inRange(hsv, lower_brown, upper_brown)
         
         # ノイズ除去
-        kernel = np.ones((3,3), np.uint8)
-        rust_mask = cv2.morphologyEx(rust_mask, cv2.MORPH_OPEN, kernel)
+        #kernel = np.ones((3,3), np.uint8)
+        #rust_mask = cv2.morphologyEx(rust_mask, cv2.MORPH_OPEN, kernel)
         
         # 輪郭検出
         contours, _ = cv2.findContours(rust_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
