@@ -195,6 +195,32 @@ def create_cropped_image_with_bbox(frame, detection_info, target_width, target_h
     
     return resized_img
 
+def add_colored_border(panel, is_paused, is_all_paused, border_thickness=8):
+    """パネルに一時停止/再生状態を示す色付きの縁取りを追加"""
+    if is_all_paused:
+        # 全体停止中：赤色の縁取り
+        border_color = (0, 0, 255)  # 赤色 (BGR)
+    elif is_paused:
+        # 個別停止中：オレンジ色の縁取り
+        border_color = (0, 165, 255)  # オレンジ色 (BGR)
+    else:
+        # 再生中：緑色の縁取り
+        border_color = (0, 255, 0)  # 緑色 (BGR)
+    
+    # パネルの周囲に色付きの縁取りを描画
+    height, width = panel.shape[:2]
+    
+    # 上辺
+    cv2.rectangle(panel, (0, 0), (width, border_thickness), border_color, -1)
+    # 下辺
+    cv2.rectangle(panel, (0, height - border_thickness), (width, height), border_color, -1)
+    # 左辺
+    cv2.rectangle(panel, (0, 0), (border_thickness, height), border_color, -1)
+    # 右辺
+    cv2.rectangle(panel, (width - border_thickness, 0), (width, height), border_color, -1)
+    
+    return panel
+
 while True:
     ret, frame = cap.read()
     if not ret:
@@ -290,6 +316,9 @@ while True:
     else:
         panel_lu = np.zeros((half_h, half_w, 3), dtype=np.uint8)
         cv2.putText(panel_lu, 'No Target Image', (40, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 3)
+    
+    # 左上パネルに色付きの縁取りを追加
+    panel_lu = add_colored_border(panel_lu, leftup_paused, all_paused)
 
     # 右上：検出中の画像（通常表示）
     # 左上または左下が一時停止中の場合、一時停止していない方に検出ラベルを表示
@@ -320,6 +349,9 @@ while True:
     else:
         panel_ld = np.zeros((half_h, half_w, 3), dtype=np.uint8)
         cv2.putText(panel_ld, 'No Secondary Target', (40, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 3)
+    
+    # 左下パネルに色付きの縁取りを追加
+    panel_ld = add_colored_border(panel_ld, leftdown_paused, all_paused)
     # 右下：認識情報
     panel_rd = np.zeros((half_h, half_w, 3), dtype=np.uint8)
     info_lines = []
