@@ -73,7 +73,7 @@ def bilinear_sample_gray(gray, xs, ys):
 
 def detect_landolt_gaps(img, center_x, center_y, num_circles=20, min_match_ratio=0.8):
     """
-    画像中心を基準としてランドルト環の穴を検出（黒/白ランドルト環自動判別）
+    画像中心を基準としてランドルト環の穴を検出（ブラックとホワイトの両方を同時検出）
     
     Parameters:
     - img: 入力画像 (BGR)
@@ -82,12 +82,11 @@ def detect_landolt_gaps(img, center_x, center_y, num_circles=20, min_match_ratio
     - min_match_ratio: 円周上でのランドルト環色一致率の最小閾値（0.8=80%以上でランドルト環として認識）
     
     Returns:
-    - dict: 検出結果
+    - dict: 検出結果（ブラックとホワイトの両方の情報を含む）
     """
     
-    # 画像全体の明度を分析して白背景/黒背景を判定
+    # 画像全体の明度を分析
     is_white_background, mean_brightness = analyze_image_brightness(img)
-    is_white_landolt = is_white_background  # 白背景なら白いランドルト環
     
     # BGRをRGBに変換してからHSVに変換
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -104,9 +103,15 @@ def detect_landolt_gaps(img, center_x, center_y, num_circles=20, min_match_ratio
     # 同心円の半径を計算（外側から内側へ）
     radii = np.linspace(max_radius * 0.9, min_radius, num_circles)
     
-    valid_circles = []
-    all_circles = []
-    gap_results = {}
+    # ブラックランドルト環用の変数
+    black_valid_circles = []
+    black_all_circles = []
+    black_gap_results = {}
+    
+    # ホワイトランドルト環用の変数
+    white_valid_circles = []
+    white_all_circles = []
+    white_gap_results = {}
     
     for radius in radii:
         # 円周上のサンプル点を取得
@@ -136,50 +141,141 @@ def detect_landolt_gaps(img, center_x, center_y, num_circles=20, min_match_ratio
         # HSV値を取得
         hsv_samples = hsv_img[y_int, x_int]
         
-        # ランドルト環色一致をチェック（黒/白自動判別）
-        matches = []
-        gap_angles = []
+        # ブラックランドルト環の検出（黒い部分がランドルト環、白い部分が穴）
+        black_matches = []
+        black_gap_angles = []
+        
+        # ホワイトランドルト環の検出（白い部分がランドルト環、黒い部分が穴）
+        white_matches = []
+        white_gap_angles = []
         
         for i, hsv_pixel in enumerate(hsv_samples):
-            is_landolt_color = check_is_target_color(hsv_pixel, brightness_threshold=80, is_white_landolt=is_white_landolt)
-            matches.append(is_landolt_color)
+            # ブラックランドルト環の判定
+            is_black_landolt = check_is_target_color(hsv_pixel, brightness_threshold=80, is_white_landolt=False)
+            black_matches.append(is_black_landolt)
             
-            if not is_landolt_color:
-                # 非ランドルト環色の部分はギャップとして記録
+            if not is_black_landolt:
+                # 非ブラックランドルト環色の部分はギャップとして記録
                 angle_deg = (theta_valid[i] * 180.0 / np.pi) % 360.0
-                gap_angles.append(angle_deg)
+                black_gap_angles.append(angle_deg)
+            
+            # ホワイトランドルト環の判定
+            is_white_landolt = check_is_target_color(hsv_pixel, brightness_threshold=80, is_white_landolt=True)
+            white_matches.append(is_white_landolt)
+            
+            if not is_white_landolt:
+                # 非ホワイトランドルト環色の部分はギャップとして記録
+                angle_deg = (theta_valid[i] * 180.0 / np.pi) % 360.0
+                white_gap_angles.append(angle_deg)
         
-        # ランドルト環色一致率を計算
-        match_ratio = np.mean(matches) if matches else 0.0
+        # ブラックランドルト環色一致率を計算
+        black_match_ratio = np.mean(black_matches) if black_matches else 0.0
         
-        # 円の情報を記録
-        circle_info = {
+        # ホワイトランドルト環色一致率を計算
+        white_match_ratio = np.mean(white_matches) if white_matches else 0.0
+        
+        # ブラックランドルト環の円の情報を記録
+        black_circle_info = {
             'radius': radius,
-            'match_ratio': match_ratio,
-            'total_samples': len(matches),
-            'matched_samples': np.sum(matches)
+            'match_ratio': black_match_ratio,
+            'total_samples': len(black_matches),
+            'matched_samples': np.sum(black_matches),
+            'type': 'black'
         }
-        all_circles.append(circle_info)
+        black_all_circles.append(black_circle_info)
+        
+        # ホワイトランドルト環の円の情報を記録
+        white_circle_info = {
+            'radius': radius,
+            'match_ratio': white_match_ratio,
+            'total_samples': len(white_matches),
+            'matched_samples': np.sum(white_matches),
+            'type': 'white'
+        }
+        white_all_circles.append(white_circle_info)
         
         # ランドルト環色が80%以上の円のみをランドルト環として認識
         landolt_ratio_threshold = 0.8  # 80%以上の閾値
-        if match_ratio >= landolt_ratio_threshold:
-            valid_circles.append(circle_info)
+        
+        # ブラックランドルト環の有効性チェック
+        if black_match_ratio >= landolt_ratio_threshold:
+            black_valid_circles.append(black_circle_info)
             
-            # ギャップの連続区間を検出
-            if gap_angles:
-                gap_intervals = detect_gap_intervals(gap_angles)
+            # ブラックランドルト環のギャップの連続区間を検出
+            if black_gap_angles:
+                gap_intervals = detect_gap_intervals(black_gap_angles)
                 if gap_intervals:
-                    gap_results[radius] = gap_intervals
+                    black_gap_results[radius] = gap_intervals
+        
+        # ホワイトランドルト環の有効性チェック
+        if white_match_ratio >= landolt_ratio_threshold:
+            white_valid_circles.append(white_circle_info)
+            
+            # ホワイトランドルト環のギャップの連続区間を検出
+            if white_gap_angles:
+                gap_intervals = detect_gap_intervals(white_gap_angles)
+                if gap_intervals:
+                    white_gap_results[radius] = gap_intervals
     
-    return {
-        'valid_circles': valid_circles,
-        'all_circles': all_circles,
-        'gap_results': gap_results,
-        'center': (center_x, center_y),
-        'is_white_landolt': is_white_landolt,
-        'mean_brightness': mean_brightness
-    }
+    # ブラックとホワイトのランドルト環が同時に存在した場合、円の数が多い方を選択
+    black_circle_count = len(black_valid_circles)
+    white_circle_count = len(white_valid_circles)
+    
+    # 選択されたランドルト環タイプを決定
+    selected_type = None
+    if black_circle_count > white_circle_count:
+        selected_type = 'black'
+    elif white_circle_count > black_circle_count:
+        selected_type = 'white'
+    # 円の数が同じ場合は、どちらも選択しない（None）
+    
+    # 選択されたタイプに基づいて結果を返す
+    if selected_type == 'black':
+        return {
+            'black_valid_circles': black_valid_circles,
+            'black_all_circles': black_all_circles,
+            'black_gap_results': black_gap_results,
+            'white_valid_circles': [],
+            'white_all_circles': [],
+            'white_gap_results': {},
+            'center': (center_x, center_y),
+            'mean_brightness': mean_brightness,
+            'is_white_background': is_white_background,
+            'selected_type': 'black',
+            'black_circle_count': black_circle_count,
+            'white_circle_count': white_circle_count
+        }
+    elif selected_type == 'white':
+        return {
+            'black_valid_circles': [],
+            'black_all_circles': [],
+            'black_gap_results': {},
+            'white_valid_circles': white_valid_circles,
+            'white_all_circles': white_all_circles,
+            'white_gap_results': white_gap_results,
+            'center': (center_x, center_y),
+            'mean_brightness': mean_brightness,
+            'is_white_background': is_white_background,
+            'selected_type': 'white',
+            'black_circle_count': black_circle_count,
+            'white_circle_count': white_circle_count
+        }
+    else:
+        # どちらも選択されない場合（円の数が同じ、または両方とも0）
+        return {
+            'black_valid_circles': [],
+            'black_all_circles': [],
+            'black_gap_results': {},
+            'white_valid_circles': [],
+            'white_all_circles': [],
+            'white_gap_results': {},
+            'center': (center_x, center_y),
+            'mean_brightness': mean_brightness,
+            'is_white_background': is_white_background,
+            'selected_type': None,
+            'black_circle_count': black_circle_count,
+            'white_circle_count': white_circle_count
+        }
 
 def detect_gap_intervals(gap_angles, min_gap_size=5.0):
     """
@@ -315,8 +411,8 @@ def create_hsv_binary_visualization(img, center_x, center_y, num_circles=20, bri
 
 def create_hsv_overlay_on_original(img, center_x, center_y, num_circles=20, brightness_threshold=80, alpha=0.6):
     """
-    元画像にHSVの分類結果を半透明でオーバーレイした画像を作成（黒/白ランドルト環自動判別）
-    80%以上のランドルト環色を持つランドルト環のみを表示し、その穴のみを赤で表示
+    元画像にHSVの分類結果を半透明でオーバーレイした画像を作成（ブラックとホワイトの両方を同時表示）
+    80%以上のランドルト環色を持つランドルト環のみを表示し、色分けして表示
     
     Parameters:
     - img: 入力画像 (BGR)
@@ -328,10 +424,6 @@ def create_hsv_overlay_on_original(img, center_x, center_y, num_circles=20, brig
     Returns:
     - overlay_img: 元画像にHSV分類結果をオーバーレイした画像
     """
-    # 画像全体の明度を分析して白背景/黒背景を判定
-    is_white_background, mean_brightness = analyze_image_brightness(img)
-    is_white_landolt = is_white_background  # 白背景なら白いランドルト環
-    
     # BGRをRGBに変換してからHSVに変換
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     hsv_img = rgb_to_hsv_opencv(img_rgb)
@@ -351,8 +443,9 @@ def create_hsv_overlay_on_original(img, center_x, center_y, num_circles=20, brig
     # 同心円の半径を計算（外側から内側へ）
     radii = np.linspace(max_radius * 0.9, min_radius, num_circles)
     
-    # 各円について80%以上のランドルト環色があるかチェック
-    valid_landolt_radii = []
+    # 各円についてブラックとホワイトの両方をチェック
+    black_valid_radii = []
+    white_valid_radii = []
     
     for radius in radii:
         # 円周上のサンプル点を取得
@@ -381,66 +474,127 @@ def create_hsv_overlay_on_original(img, center_x, center_y, num_circles=20, brig
         # HSV値を取得
         hsv_samples = hsv_img[y_int, x_int]
         
-        # ランドルト環色一致率を計算
-        landolt_count = 0
+        # ブラックランドルト環色一致率を計算
+        black_landolt_count = 0
+        white_landolt_count = 0
         total_count = len(hsv_samples)
         
         for hsv_pixel in hsv_samples:
-            if check_is_target_color(hsv_pixel, brightness_threshold, is_white_landolt):
-                landolt_count += 1
+            if check_is_target_color(hsv_pixel, brightness_threshold, is_white_landolt=False):
+                black_landolt_count += 1
+            if check_is_target_color(hsv_pixel, brightness_threshold, is_white_landolt=True):
+                white_landolt_count += 1
         
-        match_ratio = landolt_count / total_count if total_count > 0 else 0.0
+        black_match_ratio = black_landolt_count / total_count if total_count > 0 else 0.0
+        white_match_ratio = white_landolt_count / total_count if total_count > 0 else 0.0
         
         # 80%以上のランドルト環色がある場合のみランドルト環として認識
-        if match_ratio >= 0.8:
-            valid_landolt_radii.append(radius)
+        if black_match_ratio >= 0.8:
+            black_valid_radii.append(radius)
+        if white_match_ratio >= 0.8:
+            white_valid_radii.append(radius)
     
-    # 有効なランドルト環のみを描画
-    for radius in valid_landolt_radii:
-        # 円周上のサンプル点を取得
-        n_samples = max(360, int(2 * np.pi * radius))
-        theta = np.linspace(0, 2*np.pi, n_samples, endpoint=False)
-        
-        # 円周上の座標計算
-        x_coords = center_x + radius * np.cos(theta)
-        y_coords = center_y + radius * np.sin(theta)
-        
-        # 画像境界内の点のみを取得
-        valid_mask = ((x_coords >= 0) & (x_coords < W) & 
-                     (y_coords >= 0) & (y_coords < H))
-        
-        if not valid_mask.any():
-            continue
+    # 円の数が多い方を選択（同時に存在する場合の処理）
+    selected_type = None
+    if len(black_valid_radii) > len(white_valid_radii):
+        selected_type = 'black'
+    elif len(white_valid_radii) > len(black_valid_radii):
+        selected_type = 'white'
+    # 円の数が同じ場合は、どちらも描画しない
+    
+    # 選択されたタイプのみを描画
+    if selected_type == 'black':
+        # ブラックランドルト環を描画（青色系）
+        for radius in black_valid_radii:
+            # 円周上のサンプル点を取得
+            n_samples = max(360, int(2 * np.pi * radius))
+            theta = np.linspace(0, 2*np.pi, n_samples, endpoint=False)
             
-        # 有効な座標のみを使用
-        x_valid = x_coords[valid_mask]
-        y_valid = y_coords[valid_mask]
-        
-        # 整数座標に変換（最近傍）
-        x_int = np.clip(np.round(x_valid).astype(int), 0, W-1)
-        y_int = np.clip(np.round(y_valid).astype(int), 0, H-1)
-        
-        # HSV値を取得
-        hsv_samples = hsv_img[y_int, x_int]
-        
-        # 有効なランドルト環の部分と穴の両方を描画
-        for i, hsv_pixel in enumerate(hsv_samples):
-            is_landolt_color = check_is_target_color(hsv_pixel, brightness_threshold, is_white_landolt)
-            x, y = x_int[i], y_int[i]
+            # 円周上の座標計算
+            x_coords = center_x + radius * np.cos(theta)
+            y_coords = center_y + radius * np.sin(theta)
             
-            if is_landolt_color:
-                # ランドルト環部分を青色でマーク
-                cv2.circle(overlay, (x, y), 3, (255, 0, 0), -1)  # 青
-            else:
-                # 穴部分を赤色でマーク
-                cv2.circle(overlay, (x, y), 4, (0, 0, 255), -1)  # 赤、少し大きく
+            # 画像境界内の点のみを取得
+            valid_mask = ((x_coords >= 0) & (x_coords < W) & 
+                         (y_coords >= 0) & (y_coords < H))
+            
+            if not valid_mask.any():
+                continue
+                
+            # 有効な座標のみを使用
+            x_valid = x_coords[valid_mask]
+            y_valid = y_coords[valid_mask]
+            
+            # 整数座標に変換（最近傍）
+            x_int = np.clip(np.round(x_valid).astype(int), 0, W-1)
+            y_int = np.clip(np.round(y_valid).astype(int), 0, H-1)
+            
+            # HSV値を取得
+            hsv_samples = hsv_img[y_int, x_int]
+            
+            # ブラックランドルト環の部分と穴を描画
+            for i, hsv_pixel in enumerate(hsv_samples):
+                is_black_landolt = check_is_target_color(hsv_pixel, brightness_threshold, is_white_landolt=False)
+                x, y = x_int[i], y_int[i]
+                
+                if is_black_landolt:
+                    # ブラックランドルト環部分を青色でマーク
+                    cv2.circle(overlay, (x, y), 3, (255, 0, 0), -1)  # 青
+                else:
+                    # ブラックランドルト環の穴部分を赤色でマーク
+                    cv2.circle(overlay, (x, y), 4, (0, 0, 255), -1)  # 赤、少し大きく
+        
+        # ブラックランドルト環の円を描画
+        for radius in black_valid_radii:
+            cv2.circle(overlay, (int(center_x), int(center_y)), int(radius), (255, 0, 0), 2)  # 青い円
+    
+    elif selected_type == 'white':
+        # ホワイトランドルト環を描画（緑色系）
+        for radius in white_valid_radii:
+            # 円周上のサンプル点を取得
+            n_samples = max(360, int(2 * np.pi * radius))
+            theta = np.linspace(0, 2*np.pi, n_samples, endpoint=False)
+            
+            # 円周上の座標計算
+            x_coords = center_x + radius * np.cos(theta)
+            y_coords = center_y + radius * np.sin(theta)
+            
+            # 画像境界内の点のみを取得
+            valid_mask = ((x_coords >= 0) & (x_coords < W) & 
+                         (y_coords >= 0) & (y_coords < H))
+            
+            if not valid_mask.any():
+                continue
+                
+            # 有効な座標のみを使用
+            x_valid = x_coords[valid_mask]
+            y_valid = y_coords[valid_mask]
+            
+            # 整数座標に変換（最近傍）
+            x_int = np.clip(np.round(x_valid).astype(int), 0, W-1)
+            y_int = np.clip(np.round(y_valid).astype(int), 0, H-1)
+            
+            # HSV値を取得
+            hsv_samples = hsv_img[y_int, x_int]
+            
+            # ホワイトランドルト環の部分と穴を描画
+            for i, hsv_pixel in enumerate(hsv_samples):
+                is_white_landolt = check_is_target_color(hsv_pixel, brightness_threshold, is_white_landolt=True)
+                x, y = x_int[i], y_int[i]
+                
+                if is_white_landolt:
+                    # ホワイトランドルト環部分を緑色でマーク
+                    cv2.circle(overlay, (x, y), 3, (0, 255, 0), -1)  # 緑
+                else:
+                    # ホワイトランドルト環の穴部分をマゼンタ色でマーク
+                    cv2.circle(overlay, (x, y), 4, (255, 0, 255), -1)  # マゼンタ、少し大きく
+        
+        # ホワイトランドルト環の円を描画
+        for radius in white_valid_radii:
+            cv2.circle(overlay, (int(center_x), int(center_y)), int(radius), (0, 255, 0), 2)  # 緑の円
     
     # 中心点を描画（黄色）
     cv2.circle(overlay, (int(center_x), int(center_y)), 5, (0, 255, 255), -1)
-    
-    # 有効なランドルト環の円のみを描画（緑色）
-    for radius in valid_landolt_radii:
-        cv2.circle(overlay, (int(center_x), int(center_y)), int(radius), (0, 255, 0), 2)
     
     # アルファブレンディングで重ね合わせ
     overlay_img = cv2.addWeighted(overlay_img, 1.0 - alpha, overlay, alpha, 0)
@@ -449,7 +603,7 @@ def create_hsv_overlay_on_original(img, center_x, center_y, num_circles=20, brig
 
 def draw_landolt_analysis(img, analysis_result):
     """
-    ランドルト環解析結果を画像に描画
+    ランドルト環解析結果を画像に描画（ブラックとホワイトの両方を表示）
     
     Parameters:
     - img: 入力画像
@@ -460,30 +614,36 @@ def draw_landolt_analysis(img, analysis_result):
     """
     annotated_img = img.copy()
     center_x, center_y = analysis_result['center']
-    valid_circles = analysis_result['valid_circles']
-    gap_results = analysis_result['gap_results']
+    
+    # ブラックランドルト環の情報を取得
+    black_valid_circles = analysis_result.get('black_valid_circles', [])
+    black_gap_results = analysis_result.get('black_gap_results', {})
+    
+    # ホワイトランドルト環の情報を取得
+    white_valid_circles = analysis_result.get('white_valid_circles', [])
+    white_gap_results = analysis_result.get('white_gap_results', {})
     
     # 中心点を描画
     cv2.circle(annotated_img, (int(center_x), int(center_y)), 3, (255, 255, 0), -1)
     
-    # 有効な円を描画
-    for circle_info in valid_circles:
+    # ブラックランドルト環の有効な円を描画（青色系）
+    for circle_info in black_valid_circles:
         radius = int(circle_info['radius'])
         match_ratio = circle_info['match_ratio']
         
         # 円を描画（マッチ率に応じて色を変更）
         if match_ratio >= 0.9:
-            color = (0, 255, 0)  # 緑：90%以上（最高品質ランドルト環）
+            color = (255, 0, 0)  # 青：90%以上（最高品質ブラックランドルト環）
         elif match_ratio >= 0.8:
-            color = (0, 165, 255)  # オレンジ：80-90%（有効ランドルト環）
+            color = (255, 100, 0)  # 水色：80-90%（有効ブラックランドルト環）
         else:
             color = (128, 128, 128)  # グレー：80%未満（無効）
         
         cv2.circle(annotated_img, (int(center_x), int(center_y)), radius, color, 1)
         
         # ギャップがある場合は時刻を表示
-        if radius in gap_results:
-            for gap_start, gap_end in gap_results[radius]:
+        if radius in black_gap_results:
+            for gap_start, gap_end in black_gap_results[radius]:
                 gap_center = (gap_start + gap_end) / 2
                 hour = angle_to_clock_hour(gap_center)
                 
@@ -493,15 +653,52 @@ def draw_landolt_analysis(img, analysis_result):
                 text_x = int(center_x + text_radius * math.cos(text_angle))
                 text_y = int(center_y + text_radius * math.sin(text_angle))
                 
-                # 時刻を表示
-                cv2.putText(annotated_img, f"{hour}", (text_x, text_y), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                # 時刻を表示（ブラックランドルト環用）
+                cv2.putText(annotated_img, f"B{hour}", (text_x, text_y), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
                 
-                # ギャップの弧を赤で描画
+                # ギャップの弧を青で描画
                 start_angle = int(gap_start)
                 end_angle = int(gap_end)
                 cv2.ellipse(annotated_img, (int(center_x), int(center_y)), 
-                           (radius, radius), 0, start_angle, end_angle, (0, 0, 255), 3)
+                           (radius, radius), 0, start_angle, end_angle, (255, 0, 0), 3)
+    
+    # ホワイトランドルト環の有効な円を描画（緑色系）
+    for circle_info in white_valid_circles:
+        radius = int(circle_info['radius'])
+        match_ratio = circle_info['match_ratio']
+        
+        # 円を描画（マッチ率に応じて色を変更）
+        if match_ratio >= 0.9:
+            color = (0, 255, 0)  # 緑：90%以上（最高品質ホワイトランドルト環）
+        elif match_ratio >= 0.8:
+            color = (0, 255, 100)  # 薄緑：80-90%（有効ホワイトランドルト環）
+        else:
+            color = (128, 128, 128)  # グレー：80%未満（無効）
+        
+        cv2.circle(annotated_img, (int(center_x), int(center_y)), radius, color, 1)
+        
+        # ギャップがある場合は時刻を表示
+        if radius in white_gap_results:
+            for gap_start, gap_end in white_gap_results[radius]:
+                gap_center = (gap_start + gap_end) / 2
+                hour = angle_to_clock_hour(gap_center)
+                
+                # 時刻表示位置（ホワイトランドルト環用は少しずらす）
+                text_radius = radius + 25
+                text_angle = math.radians(gap_center)
+                text_x = int(center_x + text_radius * math.cos(text_angle))
+                text_y = int(center_y + text_radius * math.sin(text_angle))
+                
+                # 時刻を表示（ホワイトランドルト環用）
+                cv2.putText(annotated_img, f"W{hour}", (text_x, text_y), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                
+                # ギャップの弧を緑で描画
+                start_angle = int(gap_start)
+                end_angle = int(gap_end)
+                cv2.ellipse(annotated_img, (int(center_x), int(center_y)), 
+                           (radius, radius), 0, start_angle, end_angle, (0, 255, 0), 3)
     
     return annotated_img
 
@@ -830,31 +1027,69 @@ while True:
             # HSVオーバーレイ画像をパネルの正しい位置に配置
             panel_rd[start_y:start_y+square_size, start_x:start_x+square_size] = hsv_overlay_img
             
-            # 検出された穴の情報をテキストで表示
-            gap_info = []
-            for radius, gaps in landolt_result['gap_results'].items():
-                for gap_start, gap_end in gaps:
-                    gap_center = (gap_start + gap_end) / 2
-                    hour = angle_to_clock_hour(gap_center)
-                    gap_info.append(f"r{int(radius)}:{hour}時")
-            
-            # 検出情報とランドルト環タイプを画像上に表示
-            landolt_type = "White" if landolt_result.get('is_white_landolt', False) else "Black"
+            # 選択されたランドルト環タイプの情報を取得
+            selected_type = landolt_result.get('selected_type', None)
+            black_circle_count = landolt_result.get('black_circle_count', 0)
+            white_circle_count = landolt_result.get('white_circle_count', 0)
             brightness = landolt_result.get('mean_brightness', 0)
             
-            if gap_info:
-                gap_text = " ".join(gap_info[:2])  # 最大2つまで表示（右下は狭いため）
-                cv2.putText(panel_rd, f"{landolt_type} Landolt:", (10, 30), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)
-                cv2.putText(panel_rd, gap_text, (10, 50), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)
-                cv2.putText(panel_rd, f"Brightness: {brightness:.0f}", (10, half_h - 20), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)
+            # 選択されたタイプに基づいて情報を表示
+            if selected_type == 'black':
+                # ブラックランドルト環の検出された穴の情報をテキストで表示
+                black_gap_info = []
+                for radius, gaps in landolt_result.get('black_gap_results', {}).items():
+                    for gap_start, gap_end in gaps:
+                        gap_center = (gap_start + gap_end) / 2
+                        hour = angle_to_clock_hour(gap_center)
+                        black_gap_info.append(f"r{int(radius)}:{hour}時")
+                
+                if black_gap_info:
+                    gap_text = " ".join(black_gap_info[:2])  # 最大2つまで表示
+                    cv2.putText(panel_rd, "Black Landolt:", (10, 30), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1)  # 青色
+                    cv2.putText(panel_rd, gap_text, (10, 50), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1)  # 青色
+                    cv2.putText(panel_rd, f"Circles: {black_circle_count}", (10, 70), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1)  # 青色
+                else:
+                    cv2.putText(panel_rd, "Black Landolt (No Gaps)", (10, 30), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1)  # 青色
+                    cv2.putText(panel_rd, f"Circles: {black_circle_count}", (10, 50), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1)  # 青色
+            
+            elif selected_type == 'white':
+                # ホワイトランドルト環の検出された穴の情報をテキストで表示
+                white_gap_info = []
+                for radius, gaps in landolt_result.get('white_gap_results', {}).items():
+                    for gap_start, gap_end in gaps:
+                        gap_center = (gap_start + gap_end) / 2
+                        hour = angle_to_clock_hour(gap_center)
+                        white_gap_info.append(f"r{int(radius)}:{hour}時")
+                
+                if white_gap_info:
+                    gap_text = " ".join(white_gap_info[:2])  # 最大2つまで表示
+                    cv2.putText(panel_rd, "White Landolt:", (10, 30), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)  # 緑色
+                    cv2.putText(panel_rd, gap_text, (10, 50), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)  # 緑色
+                    cv2.putText(panel_rd, f"Circles: {white_circle_count}", (10, 70), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)  # 緑色
+                else:
+                    cv2.putText(panel_rd, "White Landolt (No Gaps)", (10, 30), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)  # 緑色
+                    cv2.putText(panel_rd, f"Circles: {white_circle_count}", (10, 50), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)  # 緑色
+            
             else:
-                cv2.putText(panel_rd, f"No {landolt_type} Landolt Ring", (10, 30), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)
-                cv2.putText(panel_rd, f"Brightness: {brightness:.0f}", (10, half_h - 20), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)
+                # どちらも選択されていない場合
+                cv2.putText(panel_rd, "No Clear Landolt Ring", (10, 30), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)  # 黄色
+                cv2.putText(panel_rd, f"Black: {black_circle_count}, White: {white_circle_count}", (10, 50), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)  # 黄色
+            
+            # 明度情報を表示
+            cv2.putText(panel_rd, f"Brightness: {brightness:.0f}", (10, half_h - 20), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)
             
         except Exception as e:
             # エラーが発生した場合は認識情報を表示
