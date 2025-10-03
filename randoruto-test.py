@@ -45,7 +45,7 @@ def check_is_target_color(hsv_pixel, brightness_threshold=80, is_white_landolt=F
     if is_white_landolt:
         # 白いランドルト環の場合：白い部分がランドルト環、黒い部分が穴
         # 白の認識範囲を広くする（閾値を下げる）
-        white_threshold = 120  # より広い範囲で白を認識（255-135=120以上）
+        white_threshold = 105  # より広い範囲で白を認識（255-135=120以上）
         return v >= white_threshold  # 明るい部分をランドルト環として認識
     else:
         # 黒いランドルト環の場合：黒い部分がランドルト環、白い部分が穴
@@ -217,17 +217,49 @@ def detect_landolt_gaps(img, center_x, center_y, num_circles=20, min_match_ratio
                 if gap_intervals:
                     white_gap_results[radius] = gap_intervals
     
-    # ブラックとホワイトのランドルト環が同時に存在した場合、円の数が多い方を選択
+    # 連続してランドルト環が多く並んでいる方を選択
     black_circle_count = len(black_valid_circles)
     white_circle_count = len(white_valid_circles)
     
-    # 選択されたランドルト環タイプを決定
+    # 連続性を考慮した選択ロジック
+    def calculate_continuity_score(circles):
+        """連続性スコアを計算（連続して並んでいるランドルト環の最大長）"""
+        if not circles:
+            return 0
+        
+        # 半径でソート
+        sorted_circles = sorted(circles, key=lambda x: x['radius'])
+        max_continuity = 1
+        current_continuity = 1
+        
+        for i in range(1, len(sorted_circles)):
+            # 半径の差が小さい場合は連続とみなす
+            radius_diff = sorted_circles[i]['radius'] - sorted_circles[i-1]['radius']
+            if radius_diff < (max_radius - min_radius) / num_circles * 2:  # 2つ分以内の差
+                current_continuity += 1
+            else:
+                max_continuity = max(max_continuity, current_continuity)
+                current_continuity = 1
+        
+        max_continuity = max(max_continuity, current_continuity)
+        return max_continuity
+    
+    # 連続性スコアを計算
+    black_continuity_score = calculate_continuity_score(black_valid_circles)
+    white_continuity_score = calculate_continuity_score(white_valid_circles)
+    
+    # 選択されたランドルト環タイプを決定（連続性スコアが高い方を選択）
     selected_type = None
-    if black_circle_count > white_circle_count:
+    if black_continuity_score > white_continuity_score:
+        selected_type = 'black'
+    elif white_continuity_score > black_continuity_score:
+        selected_type = 'white'
+    elif black_circle_count > white_circle_count:
+        # 連続性スコアが同じ場合は、円の数が多い方を選択
         selected_type = 'black'
     elif white_circle_count > black_circle_count:
         selected_type = 'white'
-    # 円の数が同じ場合は、どちらも選択しない（None）
+    # それでも同じ場合は、どちらも選択しない（None）
     
     # 選択されたタイプに基づいて結果を返す
     if selected_type == 'black':
@@ -243,7 +275,9 @@ def detect_landolt_gaps(img, center_x, center_y, num_circles=20, min_match_ratio
             'is_white_background': is_white_background,
             'selected_type': 'black',
             'black_circle_count': black_circle_count,
-            'white_circle_count': white_circle_count
+            'white_circle_count': white_circle_count,
+            'black_continuity_score': black_continuity_score,
+            'white_continuity_score': white_continuity_score
         }
     elif selected_type == 'white':
         return {
@@ -258,10 +292,12 @@ def detect_landolt_gaps(img, center_x, center_y, num_circles=20, min_match_ratio
             'is_white_background': is_white_background,
             'selected_type': 'white',
             'black_circle_count': black_circle_count,
-            'white_circle_count': white_circle_count
+            'white_circle_count': white_circle_count,
+            'black_continuity_score': black_continuity_score,
+            'white_continuity_score': white_continuity_score
         }
     else:
-        # どちらも選択されない場合（円の数が同じ、または両方とも0）
+        # どちらも選択されない場合
         return {
             'black_valid_circles': [],
             'black_all_circles': [],
@@ -274,7 +310,9 @@ def detect_landolt_gaps(img, center_x, center_y, num_circles=20, min_match_ratio
             'is_white_background': is_white_background,
             'selected_type': None,
             'black_circle_count': black_circle_count,
-            'white_circle_count': white_circle_count
+            'white_circle_count': white_circle_count,
+            'black_continuity_score': black_continuity_score,
+            'white_continuity_score': white_continuity_score
         }
 
 def detect_gap_intervals(gap_angles, min_gap_size=5.0):
@@ -491,12 +529,45 @@ def create_hsv_overlay_on_original(img, center_x, center_y, num_circles=20, brig
         # 80%以上のランドルト環色がある場合のみランドルト環として認識
         if black_match_ratio >= 0.8:
             black_valid_radii.append(radius)
+        
         if white_match_ratio >= 0.8:
             white_valid_radii.append(radius)
     
-    # 円の数が多い方を選択（同時に存在する場合の処理）
+    # 連続性を考慮した選択ロジック（可視化用）
+    def calculate_continuity_score_vis(radii):
+        """可視化用の連続性スコアを計算"""
+        if not radii:
+            return 0
+        
+        # 半径でソート
+        sorted_radii = sorted(radii)
+        max_continuity = 1
+        current_continuity = 1
+        
+        for i in range(1, len(sorted_radii)):
+            # 半径の差が小さい場合は連続とみなす
+            radius_diff = sorted_radii[i] - sorted_radii[i-1]
+            if radius_diff < (max_radius - min_radius) / num_circles * 2:  # 2つ分以内の差
+                current_continuity += 1
+            else:
+                max_continuity = max(max_continuity, current_continuity)
+                current_continuity = 1
+        
+        max_continuity = max(max_continuity, current_continuity)
+        return max_continuity
+    
+    # 連続性スコアを計算
+    black_continuity_score = calculate_continuity_score_vis(black_valid_radii)
+    white_continuity_score = calculate_continuity_score_vis(white_valid_radii)
+    
+    # 選択されたタイプを決定（連続性スコアが高い方を選択）
     selected_type = None
-    if len(black_valid_radii) > len(white_valid_radii):
+    if black_continuity_score > white_continuity_score:
+        selected_type = 'black'
+    elif white_continuity_score > black_continuity_score:
+        selected_type = 'white'
+    elif len(black_valid_radii) > len(white_valid_radii):
+        # 連続性スコアが同じ場合は、円の数が多い方を選択
         selected_type = 'black'
     elif len(white_valid_radii) > len(black_valid_radii):
         selected_type = 'white'
@@ -1031,6 +1102,8 @@ while True:
             selected_type = landolt_result.get('selected_type', None)
             black_circle_count = landolt_result.get('black_circle_count', 0)
             white_circle_count = landolt_result.get('white_circle_count', 0)
+            black_continuity_score = landolt_result.get('black_continuity_score', 0)
+            white_continuity_score = landolt_result.get('white_continuity_score', 0)
             brightness = landolt_result.get('mean_brightness', 0)
             
             # 選択されたタイプに基づいて情報を表示
@@ -1051,10 +1124,14 @@ while True:
                                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1)  # 青色
                     cv2.putText(panel_rd, f"Circles: {black_circle_count}", (10, 70), 
                                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1)  # 青色
+                    cv2.putText(panel_rd, f"Continuity: {black_continuity_score}", (10, 90), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1)  # 青色
                 else:
                     cv2.putText(panel_rd, "Black Landolt (No Gaps)", (10, 30), 
                                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1)  # 青色
                     cv2.putText(panel_rd, f"Circles: {black_circle_count}", (10, 50), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1)  # 青色
+                    cv2.putText(panel_rd, f"Continuity: {black_continuity_score}", (10, 70), 
                                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1)  # 青色
             
             elif selected_type == 'white':
@@ -1074,17 +1151,23 @@ while True:
                                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)  # 緑色
                     cv2.putText(panel_rd, f"Circles: {white_circle_count}", (10, 70), 
                                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)  # 緑色
+                    cv2.putText(panel_rd, f"Continuity: {white_continuity_score}", (10, 90), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)  # 緑色
                 else:
                     cv2.putText(panel_rd, "White Landolt (No Gaps)", (10, 30), 
                                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)  # 緑色
                     cv2.putText(panel_rd, f"Circles: {white_circle_count}", (10, 50), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)  # 緑色
+                    cv2.putText(panel_rd, f"Continuity: {white_continuity_score}", (10, 70), 
                                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)  # 緑色
             
             else:
                 # どちらも選択されていない場合
                 cv2.putText(panel_rd, "No Clear Landolt Ring", (10, 30), 
                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)  # 黄色
-                cv2.putText(panel_rd, f"Black: {black_circle_count}, White: {white_circle_count}", (10, 50), 
+                cv2.putText(panel_rd, f"Circles - B:{black_circle_count} W:{white_circle_count}", (10, 50), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)  # 黄色
+                cv2.putText(panel_rd, f"Continuity - B:{black_continuity_score} W:{white_continuity_score}", (10, 70), 
                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)  # 黄色
             
             # 明度情報を表示
