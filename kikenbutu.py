@@ -54,9 +54,9 @@ except Exception:
 window_width = screen_width
 window_height = screen_height
 
-cv2.namedWindow('Detection Viewer', cv2.WINDOW_NORMAL)
-cv2.resizeWindow('Detection Viewer', window_width, window_height)
-cv2.setWindowProperty('Detection Viewer', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+cv2.namedWindow('Target Detection Viewer', cv2.WINDOW_NORMAL)
+cv2.resizeWindow('Target Detection Viewer', window_width, window_height)
+cv2.setWindowProperty('Target Detection Viewer', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
 # --- 四分割用の履歴リスト ---
 detected_history = []  # 検出物体の切り抜き履歴（最新が先頭）
@@ -76,8 +76,8 @@ leftdown_paused = False  # 左下一時停止フラグ
 leftdown_frame_count = 0  # 左下フレームカウンター
 leftdown_last_frame_time = time.time()  # 左下最後のフレーム更新時間
 
-# --- 全体停止用 ---
-all_paused = False  # 全体一時停止フラグ
+# --- 全体停止用（削除） ---
+# all_paused = False  # 全体一時停止フラグ（削除）
 
 # --- 保存用のカウンター ---
 save_counter = 0
@@ -184,6 +184,29 @@ def create_cropped_image_with_bbox(frame, detection_info, target_width, target_h
     
     return resized_img
 
+def add_colored_border(panel, is_paused, border_thickness=8):
+    """パネルに一時停止/再生状態を示す色付きの縁取りを追加"""
+    if is_paused:
+        # 停止中：オレンジ色の縁取り
+        border_color = (0, 165, 255)  # オレンジ色 (BGR)
+    else:
+        # 再生中：緑色の縁取り
+        border_color = (0, 255, 0)  # 緑色 (BGR)
+    
+    # パネルの周囲に色付きの縁取りを描画
+    height, width = panel.shape[:2]
+    
+    # 上辺
+    cv2.rectangle(panel, (0, 0), (width, border_thickness), border_color, -1)
+    # 下辺
+    cv2.rectangle(panel, (0, height - border_thickness), (width, height), border_color, -1)
+    # 左辺
+    cv2.rectangle(panel, (0, 0), (border_thickness, height), border_color, -1)
+    # 右辺
+    cv2.rectangle(panel, (width - border_thickness, 0), (width, height), border_color, -1)
+    
+    return panel
+
 while True:
     ret, frame = cap.read()
     if not ret:
@@ -222,7 +245,7 @@ while True:
     detections_with_confidence.sort(key=lambda x: x['confidence'], reverse=True)
 
     # 左上のフレーム更新（0.9秒ごと、一時停止中でない場合）
-    if not leftup_paused and not all_paused and (now - leftup_last_frame_time > 0.9):
+    if not leftup_paused and (now - leftup_last_frame_time > 0.9):
         if detections_with_confidence:
             # 左上：最も信頼度の高い検出物体を選択
             leftup_image = detections_with_confidence[0]['crop'].copy()
@@ -236,7 +259,7 @@ while True:
             leftup_last_frame_time = now
 
     # 左下のフレーム更新（0.9秒ごと、一時停止中でない場合）
-    if not leftdown_paused and not all_paused and (now - leftdown_last_frame_time > 0.9):
+    if not leftdown_paused and (now - leftdown_last_frame_time > 0.9):
         if detections_with_confidence:
             # 左下：検出物体がある場合は2番目、ない場合は1番目を表示
             if len(detections_with_confidence) >= 2:
@@ -264,14 +287,11 @@ while True:
     # 左上：0.9秒ごと更新・独立一時停止可能
     if leftup_image is not None:
         panel_lu = cv2.resize(leftup_image, (half_w, half_h))
-        if all_paused:
-            status_text = "ALL PAUSED"
-            color = (0, 0, 255)
-        elif leftup_paused:
+        if leftup_paused:
             status_text = "PAUSED"
             color = (0, 0, 255)
         else:
-            status_text = "PLAYING"
+            status_text = "TARGET VIEW"
             color = (0, 255, 0)
         cv2.putText(panel_lu, status_text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2)
         if leftup_info and 'confidence' in leftup_info:
@@ -279,11 +299,14 @@ while True:
             cv2.putText(panel_lu, conf_text, (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
     else:
         panel_lu = np.zeros((half_h, half_w, 3), dtype=np.uint8)
-        cv2.putText(panel_lu, 'No Image', (40, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 3)
+        cv2.putText(panel_lu, 'No Target Image', (40, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 3)
+    
+    # 左上パネルに色付きの縁取りを追加
+    panel_lu = add_colored_border(panel_lu, leftup_paused)
 
     # 右上：検出中の画像（通常表示）
     # 左上または左下が一時停止中の場合、一時停止していない方に検出ラベルを表示
-    if (leftup_paused and not leftdown_paused and not all_paused) or (leftdown_paused and not leftup_paused and not all_paused):
+    if (leftup_paused and not leftdown_paused) or (leftdown_paused and not leftup_paused):
         # どちらか一方が一時停止中の場合、右上に検出ラベル付きの画像を表示
         panel_ru = cv2.resize(annotated_frame, (half_w, half_h))
         cv2.putText(panel_ru, "DETECTION VIEW", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 255), 2)
@@ -294,41 +317,38 @@ while True:
     # 左下：二つ検出時のみ更新・独立一時停止可能
     if leftdown_image is not None:
         panel_ld = cv2.resize(leftdown_image, (half_w, half_h))
-        if all_paused:
-            status_text = "ALL PAUSED"
-            color = (0, 0, 255)
-        elif leftdown_paused:
+        if leftdown_paused:
             status_text = "PAUSED"
             color = (0, 0, 255)
         else:
-            status_text = "PLAYING"
-            color = (0, 255, 0)
+            status_text = "SECONDARY TARGET"
+            color = (255, 255, 0)
         cv2.putText(panel_ld, status_text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2)
         if leftdown_info and 'confidence' in leftdown_info:
             conf_text = f"{leftdown_info.get('label','')}: {leftdown_info['confidence']:.3f}"
             cv2.putText(panel_ld, conf_text, (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
     else:
         panel_ld = np.zeros((half_h, half_w, 3), dtype=np.uint8)
-        cv2.putText(panel_ld, 'No Image', (40, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 3)
+        cv2.putText(panel_ld, 'No Secondary Target', (40, half_h//2), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (200, 200, 200), 3)
+    
+    # 左下パネルに色付きの縁取りを追加
+    panel_ld = add_colored_border(panel_ld, leftdown_paused)
     # 右下：認識情報
     panel_rd = np.zeros((half_h, half_w, 3), dtype=np.uint8)
     info_lines = []
     if detections_with_confidence:
-        info_lines.append(f'Detections: {len(detections_with_confidence)}')
+        info_lines.append(f'Target Detections: {len(detections_with_confidence)}')
         if len(detections_with_confidence) >= 1:
             info_lines.append(f'Top-Left(1): {detections_with_confidence[0]["label"]} {detections_with_confidence[0]["confidence"]:.3f}')
         if len(detections_with_confidence) >= 2:
             info_lines.append(f'Bottom-Left(2): {detections_with_confidence[1]["label"]} {detections_with_confidence[1]["confidence"]:.3f}')
     else:
-        info_lines.append('No Detection')
+        info_lines.append('No Target Detection')
     info_lines.append(f'LeftUp Frame: {leftup_frame_count}')
     info_lines.append(f'LeftDown Frame: {leftdown_frame_count}')
-    if all_paused:
-        info_lines.append('Status: ALL PAUSED')
-    else:
-        info_lines.append(f'LeftUp: {"Paused" if leftup_paused else "Playing"}')
-        info_lines.append(f'LeftDown: {"Paused" if leftdown_paused else "Playing"}')
-    info_lines.append('Controls: 1=LeftUp, 2=LeftDown, Enter=All')
+    info_lines.append(f'LeftUp: {"Paused" if leftup_paused else "Active"}')
+    info_lines.append(f'LeftDown: {"Paused" if leftdown_paused else "Active"}')
+    info_lines.append('Controls: 1=LeftUp, 2=LeftDown, Enter=Both')
     for i, line in enumerate(info_lines):
         cv2.putText(panel_rd, line, (20, 40 + i*40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
     # 常に四分割で表示（左右を入れ替え）
@@ -336,56 +356,48 @@ while True:
     bottom = np.hstack([panel_rd, panel_ld])
     combined = np.vstack([top, bottom])
     
-    cv2.imshow('Detection Viewer', combined)
+    cv2.imshow('Target Detection Viewer', combined)
 
     key = cv2.waitKey(1) & 0xFF
     if key == ord('q'):
         break
     elif key == ord('1'):  # 1キー：左上の一時停止/再開
-        if all_paused:
-            print("全体停止中です。エンターキーで全体を再開してください。")
+        leftup_paused = not leftup_paused
+        if leftup_paused:
+            print("左上を一時停止しました")
+            # 左上一時停止時に画像を保存
+            if leftup_info and detections_with_confidence:
+                save_detection_images(frame, detections_with_confidence, leftup_frame_count, leftup_info, leftdown_info)
+                print(f"左上一時停止時の画像を保存しました (Total: {save_counter} files)")
         else:
-            leftup_paused = not leftup_paused
-            if leftup_paused:
-                print("左上を一時停止しました")
-                # 左上一時停止時に画像を保存
-                if leftup_info and detections_with_confidence:
-                    save_detection_images(frame, detections_with_confidence, leftup_frame_count, leftup_info, leftdown_info)
-                    print(f"左上一時停止時の画像を保存しました (Total: {save_counter} files)")
-            else:
-                print("左上を再開しました")
+            print("左上を再開しました")
     elif key == ord('2'):  # 2キー：左下の一時停止/再開
-        if all_paused:
-            print("全体停止中です。エンターキーで全体を再開してください。")
+        leftdown_paused = not leftdown_paused
+        if leftdown_paused:
+            print("左下を一時停止しました")
+            # 左下一時停止時に画像を保存
+            if leftdown_info and detections_with_confidence:
+                save_detection_images(frame, detections_with_confidence, leftdown_frame_count, leftup_info, leftdown_info)
+                print(f"左下一時停止時の画像を保存しました (Total: {save_counter} files)")
         else:
-            leftdown_paused = not leftdown_paused
-            if leftdown_paused:
-                print("左下を一時停止しました")
-                # 左下一時停止時に画像を保存
-                if leftdown_info and detections_with_confidence:
-                    save_detection_images(frame, detections_with_confidence, leftdown_frame_count, leftup_info, leftdown_info)
-                    print(f"左下一時停止時の画像を保存しました (Total: {save_counter} files)")
-            else:
-                print("左下を再開しました")
-    elif key == 13:  # エンターキー：全体の一時停止/再開
-        if all_paused:
-            # 全体停止中の場合：全体を再開
-            all_paused = False
-            leftup_paused = False
-            leftdown_paused = False
-            print("全体を再開しました")
-        else:
-            # 再生中の場合：全体を一時停止
-            all_paused = True
-            print("全体を一時停止しました")
-            # 全体一時停止時に画像を保存
+            print("左下を再開しました")
+    elif key == 13:  # エンターキー：1キーと2キーを同時に押したもの（両方の一時停止/再開）
+        # 両方の状態を同時に切り替え
+        leftup_paused = not leftup_paused
+        leftdown_paused = not leftdown_paused
+        
+        if leftup_paused and leftdown_paused:
+            print("左上と左下を同時に一時停止しました")
+            # 両方一時停止時に画像を保存
             if detections_with_confidence:
                 save_detection_images(frame, detections_with_confidence, leftup_frame_count, leftup_info, leftdown_info)
-                print(f"全体一時停止時の画像を保存しました (Total: {save_counter} files)")
+                print(f"両方一時停止時の画像を保存しました (Total: {save_counter} files)")
+        else:
+            print("左上と左下を同時に再開しました")
 
 cap.release()
 cv2.destroyAllWindows()
-print("危険物検出を終了しました。")
+print("ターゲット検出を終了しました。")
 print(f"保存された画像の総数: {save_counter}枚")
 print(f"保存先フォルダー: {session_folder}")
 

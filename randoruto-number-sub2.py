@@ -19,8 +19,8 @@ if not cap.isOpened():
     print("OBSで「仮想カメラを開始」しているか、正しいカメラインデックスか確認してください。")
     exit()
 
-# randoruto-number-subフォルダーの作成
-save_folder = "randoruto-number-sub"
+# randoruto-number-sub2フォルダーの作成
+save_folder = "randoruto-number-sub2"
 if not os.path.exists(save_folder):
     os.makedirs(save_folder)
     print(f"フォルダーを作成しました: {save_folder}")
