@@ -82,7 +82,7 @@ leftdown_last_frame_time = time.time()  # 左下最後のフレーム更新時�
 # --- 保存用のカウンター ---
 save_counter = 0
 
-def save_detection_images(frame, detections_with_confidence, frame_count, leftup_info, leftdown_info, save_leftup=False, save_leftdown=False):
+def save_detection_images(frame, detections_with_confidence, frame_count, leftup_info, leftdown_info, save_leftup=False, save_leftdown=False, leftup_image=None, leftdown_image=None):
     """一時停止時に検出画像を保存する関数（選択的保存）"""
     global save_counter
     
@@ -119,24 +119,90 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
     print(f"画像を保存しました: {session_folder}/{filename} (検出物体数: {detection_count})")
     save_counter += 1
     
-    # 2. 右上の画像を個別保存（save_leftup=Trueの場合のみ）
+    # 2. 左上パネルの画像を保存（save_leftup=Trueの場合のみ）
     if save_leftup and leftup_info:
-        leftup_crop = create_cropped_image_with_bbox(frame, leftup_info, half_w, half_h)
-        if leftup_crop is not None:
-            leftup_filename = f"detection_frame{frame_count}_rightup_{leftup_info['label']}_{leftup_info['confidence']:.3f}.jpg"
-            leftup_filepath = os.path.join(session_folder, leftup_filename)
-            cv2.imwrite(leftup_filepath, leftup_crop)
-            print(f"右上画像を保存しました: {leftup_filename}")
+        # 左上パネルに表示されている画像をそのまま保存
+        timestamp = int(time.time() * 1000) % 100000  # ミリ秒の下5桁
+        leftup_filename = f"detection_frame{frame_count}_leftup_{leftup_info['label']}_{leftup_info['confidence']:.3f}_{timestamp}.jpg"
+        leftup_filepath = os.path.join(session_folder, leftup_filename)
+        
+        # 左上パネルの画像を取得（バウンディングボックス付き）
+        if leftup_image is not None:
+            # パネルサイズにリサイズ
+            panel_lu = cv2.resize(leftup_image, (half_w, half_h))
+            
+            # バウンディングボックスを追加
+            # 元画像での座標をパネルサイズにスケール
+            x1, y1, x2, y2 = leftup_info['box']
+            scale_x = half_w / leftup_image.shape[1]
+            scale_y = half_h / leftup_image.shape[0]
+            
+            panel_x1 = int(x1 * scale_x)
+            panel_y1 = int(y1 * scale_y)
+            panel_x2 = int(x2 * scale_x)
+            panel_y2 = int(y2 * scale_y)
+            
+            # 座標が画像範囲内かチェック
+            panel_x1 = max(0, min(panel_x1, half_w-1))
+            panel_y1 = max(0, min(panel_y1, half_h-1))
+            panel_x2 = max(0, min(panel_x2, half_w-1))
+            panel_y2 = max(0, min(panel_y2, half_h-1))
+            
+            # バウンディングボックスを描画
+            cv2.rectangle(panel_lu, (panel_x1, panel_y1), (panel_x2, panel_y2), (0, 255, 0), 2)
+            
+            # ラベルと信頼度を追加
+            label = leftup_info['label']
+            confidence = leftup_info['confidence']
+            text = f"{label}: {confidence:.3f}"
+            cv2.putText(panel_lu, text, (panel_x1, panel_y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            
+            # パネル画像を保存
+            cv2.imwrite(leftup_filepath, panel_lu)
+            print(f"左上パネル画像を保存しました: {leftup_filename}")
             save_counter += 1
     
-    # 3. 右下の画像を個別保存（save_leftdown=Trueの場合のみ）
+    # 3. 左下パネルの画像を保存（save_leftdown=Trueの場合のみ）
     if save_leftdown and leftdown_info:
-        leftdown_crop = create_cropped_image_with_bbox(frame, leftdown_info, half_w, half_h)
-        if leftdown_crop is not None:
-            leftdown_filename = f"detection_frame{frame_count}_rightdown_{leftdown_info['label']}_{leftdown_info['confidence']:.3f}.jpg"
-            leftdown_filepath = os.path.join(session_folder, leftdown_filename)
-            cv2.imwrite(leftdown_filepath, leftdown_crop)
-            print(f"右下画像を保存しました: {leftdown_filename}")
+        # 左下パネルに表示されている画像をそのまま保存
+        timestamp = int(time.time() * 1000) % 100000  # ミリ秒の下5桁
+        leftdown_filename = f"detection_frame{frame_count}_leftdown_{leftdown_info['label']}_{leftdown_info['confidence']:.3f}_{timestamp}.jpg"
+        leftdown_filepath = os.path.join(session_folder, leftdown_filename)
+        
+        # 左下パネルの画像を取得（バウンディングボックス付き）
+        if leftdown_image is not None:
+            # パネルサイズにリサイズ
+            panel_ld = cv2.resize(leftdown_image, (half_w, half_h))
+            
+            # バウンディングボックスを追加
+            # 元画像での座標をパネルサイズにスケール
+            x1, y1, x2, y2 = leftdown_info['box']
+            scale_x = half_w / leftdown_image.shape[1]
+            scale_y = half_h / leftdown_image.shape[0]
+            
+            panel_x1 = int(x1 * scale_x)
+            panel_y1 = int(y1 * scale_y)
+            panel_x2 = int(x2 * scale_x)
+            panel_y2 = int(y2 * scale_y)
+            
+            # 座標が画像範囲内かチェック
+            panel_x1 = max(0, min(panel_x1, half_w-1))
+            panel_y1 = max(0, min(panel_y1, half_h-1))
+            panel_x2 = max(0, min(panel_x2, half_w-1))
+            panel_y2 = max(0, min(panel_y2, half_h-1))
+            
+            # バウンディングボックスを描画
+            cv2.rectangle(panel_ld, (panel_x1, panel_y1), (panel_x2, panel_y2), (0, 255, 0), 2)
+            
+            # ラベルと信頼度を追加
+            label = leftdown_info['label']
+            confidence = leftdown_info['confidence']
+            text = f"{label}: {confidence:.3f}"
+            cv2.putText(panel_ld, text, (panel_x1, panel_y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            
+            # パネル画像を保存
+            cv2.imwrite(leftdown_filepath, panel_ld)
+            print(f"左下パネル画像を保存しました: {leftdown_filename}")
             save_counter += 1
 
 def create_cropped_image_with_bbox(frame, detection_info, target_width, target_height):
@@ -367,7 +433,7 @@ while True:
             print("左上を一時停止しました")
             # 左上一時停止時に画像を保存（右上のみ）
             if detections_with_confidence:
-                save_detection_images(frame, detections_with_confidence, leftup_frame_count, leftup_info, leftdown_info, save_leftup=True, save_leftdown=False)
+                save_detection_images(frame, detections_with_confidence, leftup_frame_count, leftup_info, leftdown_info, save_leftup=True, save_leftdown=False, leftup_image=leftup_image, leftdown_image=leftdown_image)
                 print(f"左上一時停止時の画像を保存しました (Total: {save_counter} files)")
         else:
             print("左上を再開しました")
@@ -377,7 +443,7 @@ while True:
             print("左下を一時停止しました")
             # 左下一時停止時に画像を保存（右下のみ）
             if detections_with_confidence:
-                save_detection_images(frame, detections_with_confidence, leftdown_frame_count, leftup_info, leftdown_info, save_leftup=False, save_leftdown=True)
+                save_detection_images(frame, detections_with_confidence, leftdown_frame_count, leftup_info, leftdown_info, save_leftup=False, save_leftdown=True, leftup_image=leftup_image, leftdown_image=leftdown_image)
                 print(f"左下一時停止時の画像を保存しました (Total: {save_counter} files)")
         else:
             print("左下を再開しました")
@@ -390,7 +456,7 @@ while True:
             print("左上と左下を同時に一時停止しました")
             # 両方一時停止時に画像を保存（両方）
             if detections_with_confidence:
-                save_detection_images(frame, detections_with_confidence, leftup_frame_count, leftup_info, leftdown_info, save_leftup=True, save_leftdown=True)
+                save_detection_images(frame, detections_with_confidence, leftup_frame_count, leftup_info, leftdown_info, save_leftup=True, save_leftdown=True, leftup_image=leftup_image, leftdown_image=leftdown_image)
                 print(f"両方一時停止時の画像を保存しました (Total: {save_counter} files)")
         else:
             print("左上と左下を同時に再開しました")
