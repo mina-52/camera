@@ -801,6 +801,11 @@ session_folder = os.path.join(save_folder, f"session_{session_timestamp}")
 os.makedirs(session_folder)
 print(f"セッションフォルダーを作成しました: {session_folder}")
 
+# カウンター変数の初期化
+save_counter = 0
+pause_counter = 0
+image_save_counter = 0
+
 # YOLOv8nモデルのパス
 model = YOLO('weights.pt')  # ここをあなたのモデルのパスに置き換えてください
 
@@ -847,14 +852,17 @@ save_counter = 0
 
 def save_detection_images(frame, detections_with_confidence, frame_count, leftup_image=None, leftdown_image=None, save_leftup=False, save_leftdown=False):
     """一時停止時に検出画像を保存する関数（右上、左上、左下の3つの画像のみ）"""
-    global save_counter
+    global save_counter, image_save_counter
     
-    if not detections_with_confidence:
-        return
+    # 検出物体がない場合でも保存を継続
     
-    # ファイル名を生成（検出数も含める）
+    # ファイル名を生成（撮影順序で並ぶように調整）
     detection_count = len(detections_with_confidence)
-    base_filename = f"detection_frame{frame_count}_{detection_count}objects"
+    # 現在の日時を取得
+    current_time = datetime.now()
+    time_str = current_time.strftime("%Y%m%d_%H%M%S")
+    # 連番でファイル名を生成（6桁のゼロパディング）
+    base_filename = f"capture_{save_counter + 1:06d}_{time_str}_frame{frame_count}_{detection_count}objects"
     
     # 右上画像：全ての検出物体にバウンディングボックスを付けた画像を保存
     annotated_img = frame.copy()
@@ -874,44 +882,67 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
     rightup_filepath = os.path.join(session_folder, f"{base_filename}_rightup.jpg")
     cv2.imwrite(rightup_filepath, annotated_img)
     print(f"右上画像を保存しました: {base_filename}_rightup.jpg (検出物体数: {detection_count})")
+    image_save_counter += 1
     
     # 左上画像：HSVオーバーレイ画像を保存（save_leftup=Trueの場合のみ）
-    if save_leftup and leftup_image is not None:
-        try:
-            # 画像サイズを決定
-            save_size = 512  # 保存用のサイズ
-            resized_img = cv2.resize(leftup_image, (save_size, save_size))
-            center_x = save_size // 2
-            center_y = save_size // 2
-            
-            # HSVオーバーレイ画像を作成
-            hsv_overlay_img = create_hsv_overlay_on_original(resized_img, center_x, center_y, 
-                                                           num_circles=20, brightness_threshold=80, alpha=0.6)
-            
-            # 左上画像を保存
-            timestamp = int(time.time() * 1000) % 100000  # ミリ秒の下5桁
-            leftup_filepath = os.path.join(session_folder, f"{base_filename}_leftup_hsv_{timestamp}.jpg")
-            cv2.imwrite(leftup_filepath, hsv_overlay_img)
-            print(f"左上画像（HSVオーバーレイ）を保存しました: {base_filename}_leftup_hsv_{timestamp}.jpg")
-            
-        except Exception as e:
-            print(f"左上画像の保存に失敗しました: {e}")
+    if save_leftup:
+        if leftup_image is not None:
+            try:
+                # 画像サイズを決定
+                save_size = 512  # 保存用のサイズ
+                resized_img = cv2.resize(leftup_image, (save_size, save_size))
+                center_x = save_size // 2
+                center_y = save_size // 2
+                
+                # HSVオーバーレイ画像を作成
+                hsv_overlay_img = create_hsv_overlay_on_original(resized_img, center_x, center_y, 
+                                                               num_circles=20, brightness_threshold=80, alpha=0.6)
+                
+                # 左上画像を保存
+                leftup_filepath = os.path.join(session_folder, f"{base_filename}_leftup_hsv.jpg")
+                cv2.imwrite(leftup_filepath, hsv_overlay_img)
+                print(f"左上画像（HSVオーバーレイ）を保存しました: {base_filename}_leftup_hsv.jpg")
+                save_counter += 1
+                image_save_counter += 1
+                
+            except Exception as e:
+                print(f"左上画像の保存に失敗しました: {e}")
+        else:
+            # leftup_imageがない場合は、no_targetファイル名で保存
+            leftup_filepath = os.path.join(session_folder, f"{base_filename}_leftup_no_target.jpg")
+            # 空の画像を作成（512x512の黒画像）
+            empty_img = np.zeros((512, 512, 3), dtype=np.uint8)
+            cv2.imwrite(leftup_filepath, empty_img)
+            print(f"左上画像（No Target）を保存しました: {base_filename}_leftup_no_target.jpg")
+            save_counter += 1
+            image_save_counter += 1
     
     # 左下画像：セカンダリ検出画像を保存（save_leftdown=Trueの場合のみ）
-    if save_leftdown and leftdown_image is not None:
-        try:
-            # 左下画像をリサイズして保存
-            save_size = 512
-            resized_leftdown = cv2.resize(leftdown_image, (save_size, save_size))
-            
-            # 左下画像を保存
-            timestamp = int(time.time() * 1000) % 100000  # ミリ秒の下5桁
-            leftdown_filepath = os.path.join(session_folder, f"{base_filename}_leftdown_{timestamp}.jpg")
-            cv2.imwrite(leftdown_filepath, resized_leftdown)
-            print(f"左下画像（セカンダリ検出）を保存しました: {base_filename}_leftdown_{timestamp}.jpg")
-            
-        except Exception as e:
-            print(f"左下画像の保存に失敗しました: {e}")
+    if save_leftdown:
+        if leftdown_image is not None:
+            try:
+                # 左下画像をリサイズして保存
+                save_size = 512
+                resized_leftdown = cv2.resize(leftdown_image, (save_size, save_size))
+                
+                # 左下画像を保存
+                leftdown_filepath = os.path.join(session_folder, f"{base_filename}_leftdown.jpg")
+                cv2.imwrite(leftdown_filepath, resized_leftdown)
+                print(f"左下画像（セカンダリ検出）を保存しました: {base_filename}_leftdown.jpg")
+                save_counter += 1
+                image_save_counter += 1
+                
+            except Exception as e:
+                print(f"左下画像の保存に失敗しました: {e}")
+        else:
+            # leftdown_imageがない場合は、no_targetファイル名で保存
+            leftdown_filepath = os.path.join(session_folder, f"{base_filename}_leftdown_no_target.jpg")
+            # 空の画像を作成（512x512の黒画像）
+            empty_img = np.zeros((512, 512, 3), dtype=np.uint8)
+            cv2.imwrite(leftdown_filepath, empty_img)
+            print(f"左下画像（No Target）を保存しました: {base_filename}_leftdown_no_target.jpg")
+            save_counter += 1
+            image_save_counter += 1
     
     save_counter += 1
 
@@ -1208,6 +1239,8 @@ while True:
         info_lines.append(f'LeftDown Frame: {leftdown_frame_count}')
         info_lines.append(f'LeftUp: {"Paused" if leftup_paused else "Active"}')
         info_lines.append(f'LeftDown: {"Paused" if leftdown_paused else "Active"}')
+        info_lines.append(f'Pause Count: {pause_counter}')
+        info_lines.append(f'Image Saves: {image_save_counter}')
         info_lines.append('Controls: 1=LeftUp, 2=LeftDown, Enter=Both')
         for i, line in enumerate(info_lines):
             cv2.putText(panel_rd, line, (20, 40 + i*40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
@@ -1227,9 +1260,9 @@ while True:
         if leftup_paused:
             print("左上を一時停止しました")
             # 左上一時停止時に画像を保存
-            if leftup_info and detections_with_confidence:
-                save_detection_images(frame, detections_with_confidence, leftup_frame_count, leftup_image, leftdown_image, save_leftup=True, save_leftdown=False)
-                print(f"左上一時停止時の画像を保存しました (Total: {save_counter} files)")
+            save_detection_images(frame, detections_with_confidence, leftup_frame_count, leftup_image, leftdown_image, save_leftup=True, save_leftdown=False)
+            print(f"左上一時停止時の画像を保存しました (Total: {save_counter} files)")
+            pause_counter += 1
         else:
             print("左上を再開しました")
     elif key == ord('2'):  # 2キー：左下の一時停止/再開
@@ -1237,9 +1270,9 @@ while True:
         if leftdown_paused:
             print("左下を一時停止しました")
             # 左下一時停止時に画像を保存
-            if leftdown_info and detections_with_confidence:
-                save_detection_images(frame, detections_with_confidence, leftdown_frame_count, leftup_image, leftdown_image, save_leftup=False, save_leftdown=True)
-                print(f"左下一時停止時の画像を保存しました (Total: {save_counter} files)")
+            save_detection_images(frame, detections_with_confidence, leftdown_frame_count, leftup_image, leftdown_image, save_leftup=False, save_leftdown=True)
+            print(f"左下一時停止時の画像を保存しました (Total: {save_counter} files)")
+            pause_counter += 1
         else:
             print("左下を再開しました")
     elif key == 13:  # エンターキー：1キーと2キーを同時に押したもの（両方の一時停止/再開）
@@ -1250,9 +1283,9 @@ while True:
         if leftup_paused and leftdown_paused:
             print("左上と左下を同時に一時停止しました")
             # 両方一時停止時に画像を保存
-            if detections_with_confidence:
-                save_detection_images(frame, detections_with_confidence, leftup_frame_count, leftup_image, leftdown_image, save_leftup=True, save_leftdown=True)
-                print(f"両方一時停止時の画像を保存しました (Total: {save_counter} files)")
+            save_detection_images(frame, detections_with_confidence, leftup_frame_count, leftup_image, leftdown_image, save_leftup=True, save_leftdown=True)
+            print(f"両方一時停止時の画像を保存しました (Total: {save_counter} files)")
+            pause_counter += 1
         else:
             print("左上と左下を同時に再開しました")
 
