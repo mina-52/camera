@@ -78,8 +78,8 @@ leftdown_last_frame_time = time.time()  # 左下最後のフレーム更新時�
 # --- 保存用のカウンター ---
 save_counter = 0
 
-def save_detection_images(frame, detections_with_confidence, frame_count, leftup_info, leftdown_info):
-    """一時停止時に検出画像を保存する関数"""
+def save_detection_images(frame, detections_with_confidence, frame_count, leftup_info, leftdown_info, save_leftup=False, save_leftdown=False):
+    """一時停止時に検出画像を保存する関数（選択的保存）"""
     global save_counter, session_folder
     
     print(f"デバッグ: save_detection_images関数が呼び出されました")
@@ -99,7 +99,7 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
     half_w = max(1, window_width // 2)
     half_h = max(1, window_height // 2)
     
-    # 1. 全ての検出物体にバウンディングボックスを付けた画像を作成
+    # 1. 全ての検出物体にバウンディングボックスを付けた画像を作成（常に保存）
     annotated_img = frame.copy()
     
     # 各検出物体に対してバウンディングボックスとラベルを追加
@@ -130,8 +130,8 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
     else:
         print(f"エラー: 画像の保存に失敗しました - {filepath}")
     
-    # 2. 右上の画像を個別保存（元の左上、四分割サイズに拡大、バウンディングボックス付き）
-    if leftup_info:
+    # 2. 右上の画像を個別保存（save_leftup=Trueの場合のみ）
+    if save_leftup and leftup_info:
         leftup_crop = create_cropped_image_with_bbox(frame, leftup_info, half_w, half_h)
         if leftup_crop is not None:
             leftup_filename = f"target_detection_frame{frame_count}_rightup_{leftup_info['label']}_{leftup_info['confidence']:.3f}.jpg"
@@ -140,8 +140,8 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
             print(f"右上画像を保存しました: {leftup_filename}")
             save_counter += 1
     
-    # 3. 右下の画像を個別保存（元の左下、四分割サイズに拡大、バウンディングボックス付き）
-    if leftdown_info:
+    # 3. 右下の画像を個別保存（save_leftdown=Trueの場合のみ）
+    if save_leftdown and leftdown_info:
         leftdown_crop = create_cropped_image_with_bbox(frame, leftdown_info, half_w, half_h)
         if leftdown_crop is not None:
             leftdown_filename = f"target_detection_frame{frame_count}_rightdown_{leftdown_info['label']}_{leftdown_info['confidence']:.3f}.jpg"
@@ -375,9 +375,9 @@ while True:
         leftup_paused = not leftup_paused
         if leftup_paused:
             print("左上を一時停止しました")
-            # 左上一時停止時に画像を保存
-            if leftup_info and detections_with_confidence:
-                save_detection_images(frame, detections_with_confidence, leftup_frame_count, leftup_info, leftdown_info)
+            # 左上一時停止時に画像を保存（右上のみ）
+            if detections_with_confidence:
+                save_detection_images(frame, detections_with_confidence, leftup_frame_count, leftup_info, leftdown_info, save_leftup=True, save_leftdown=False)
                 print(f"左上一時停止時の画像を保存しました (Total: {save_counter} files)")
         else:
             print("左上を再開しました")
@@ -385,9 +385,9 @@ while True:
         leftdown_paused = not leftdown_paused
         if leftdown_paused:
             print("左下を一時停止しました")
-            # 左下一時停止時に画像を保存
-            if leftdown_info and detections_with_confidence:
-                save_detection_images(frame, detections_with_confidence, leftdown_frame_count, leftup_info, leftdown_info)
+            # 左下一時停止時に画像を保存（右下のみ）
+            if detections_with_confidence:
+                save_detection_images(frame, detections_with_confidence, leftdown_frame_count, leftup_info, leftdown_info, save_leftup=False, save_leftdown=True)
                 print(f"左下一時停止時の画像を保存しました (Total: {save_counter} files)")
         else:
             print("左下を再開しました")
@@ -398,9 +398,9 @@ while True:
         
         if leftup_paused and leftdown_paused:
             print("左上と左下を同時に一時停止しました")
-            # 両方一時停止時に画像を保存
+            # 両方一時停止時に画像を保存（両方）
             if detections_with_confidence:
-                save_detection_images(frame, detections_with_confidence, leftup_frame_count, leftup_info, leftdown_info)
+                save_detection_images(frame, detections_with_confidence, leftup_frame_count, leftup_info, leftdown_info, save_leftup=True, save_leftdown=True)
                 print(f"両方一時停止時の画像を保存しました (Total: {save_counter} files)")
         else:
             print("左上と左下を同時に再開しました")

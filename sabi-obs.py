@@ -380,14 +380,14 @@ def mark_rust_on_detected_image(image, detection_info, target_width, target_heig
     
     return marked_image
 
-def save_detection_images(frame, detections_with_confidence, frame_count, leftup_info, leftdown_info, rust_analysis):
-    """一時停止時に検出画像を保存する関数"""
+def save_detection_images(frame, detections_with_confidence, frame_count, leftup_info, leftdown_info, rust_analysis, save_leftup=False, save_leftdown=False):
+    """一時停止時に検出画像を保存する関数（選択的保存）"""
     global save_counter
     
     if not detections_with_confidence:
         return
     
-    # 1. 全ての検出物体にバウンディングボックスを付けた画像を作成
+    # 1. 全ての検出物体にバウンディングボックスを付けた画像を作成（常に保存）
     annotated_img = frame.copy()
     
     # 各検出物体に対してバウンディングボックスとラベルを追加
@@ -424,113 +424,114 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
     print(f"Saved rust detection image: {filename} (Detected rust count: {detection_count})")
     save_counter += 1
     
-    # 2. 各板の詳細な錆マスク画像を個別保存
-    for detail in rust_analysis.get('rust_details', []):
-        plate_id = detail['plate_id']
-        rust_mask = detail['rust_mask']
-        plate_region = detail['plate_region']
-        
-        # 錆マスクを保存
-        mask_filename = f"plate_{plate_id}_rust_mask_{session_timestamp}_{frame_count:06d}.jpg"
-        mask_filepath = os.path.join(session_folder, mask_filename)
-        cv2.imwrite(mask_filepath, rust_mask)
-        
-        # 板領域に錆の輪郭を描画した画像を保存
-        plate_with_rust = plate_region.copy()
-        
-        # HSV変換して錆検出
-        hsv = cv2.cvtColor(plate_region, cv2.COLOR_BGR2HSV)
-        lower_brown = np.array([3, 57, 20])
-        upper_brown = np.array([20, 255, 200])
-        temp_mask = cv2.inRange(hsv, lower_brown, upper_brown)
-        
-        # ノイズ除去
-        kernel = np.ones((3,3), np.uint8)
-        temp_mask = cv2.morphologyEx(temp_mask, cv2.MORPH_OPEN, kernel)
-        
-        # 輪郭検出と描画
-        contours, _ = cv2.findContours(temp_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
-        rust_contour_count = 0
-        for cnt in contours:
-            area = cv2.contourArea(cnt)
-            perimeter = cv2.arcLength(cnt, True)
+    # 2. 各板の詳細な錆マスク画像を個別保存（save_leftup=Trueまたはsave_leftdown=Trueの場合のみ）
+    if save_leftup or save_leftdown:
+        for detail in rust_analysis.get('rust_details', []):
+            plate_id = detail['plate_id']
+            rust_mask = detail['rust_mask']
+            plate_region = detail['plate_region']
             
-            if perimeter == 0 or area < 30 or area > 10000:  # 最大面積を5000から10000に増加
-                continue
-                
-            circularity = 4 * np.pi * (area / (perimeter * perimeter))
-            if circularity < 0.6:
-                continue
+            # 錆マスクを保存
+            mask_filename = f"plate_{plate_id}_rust_mask_{session_timestamp}_{frame_count:06d}.jpg"
+            mask_filepath = os.path.join(session_folder, mask_filename)
+            cv2.imwrite(mask_filepath, rust_mask)
             
-            rust_contour_count += 1
+            # 板領域に錆の輪郭を描画した画像を保存
+            plate_with_rust = plate_region.copy()
             
-            # 錆のサイズを分類（2分別）
-            if area < 1000:
-                rust_size = "SMALL"
-                rust_color = (0, 255, 255)    # 黄色
-                line_thickness = 2
-                marker_radius = 8
-                font_scale = 0.7
-            else:
-                rust_size = "LARGE"
-                rust_color = (0, 0, 255)      # 赤
-                line_thickness = 4
-                marker_radius = 12
-                font_scale = 0.8
+            # HSV変換して錆検出
+            hsv = cv2.cvtColor(plate_region, cv2.COLOR_BGR2HSV)
+            lower_brown = np.array([3, 57, 20])
+            upper_brown = np.array([20, 255, 200])
+            temp_mask = cv2.inRange(hsv, lower_brown, upper_brown)
             
-            # サイズに応じた錆の輪郭を描画
-            cv2.drawContours(plate_with_rust, [cnt], -1, rust_color, line_thickness)
+            # ノイズ除去
+            kernel = np.ones((3,3), np.uint8)
+            temp_mask = cv2.morphologyEx(temp_mask, cv2.MORPH_OPEN, kernel)
             
-            # 錆領域を半透明で塗りつぶし（サイズに応じて色を変更）
-            rust_overlay = plate_with_rust.copy()
-            cv2.fillPoly(rust_overlay, [cnt], rust_color)
-            plate_with_rust = cv2.addWeighted(plate_with_rust, 0.8, rust_overlay, 0.2, 0)
+            # 輪郭検出と描画
+            contours, _ = cv2.findContours(temp_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             
-            # 錆の中心にサイズ別マーカーを追加
-            M = cv2.moments(cnt)
-            if M["m00"] != 0:
-                cx = int(M["m10"]/M["m00"])
-                cy = int(M["m01"]/M["m00"])
+            rust_contour_count = 0
+            for cnt in contours:
+                area = cv2.contourArea(cnt)
+                perimeter = cv2.arcLength(cnt, True)
                 
-                # サイズに応じた円形マーカー
-                cv2.circle(plate_with_rust, (cx, cy), marker_radius, (255, 255, 255), -1)  # 白い背景円
-                cv2.circle(plate_with_rust, (cx, cy), marker_radius, (0, 0, 0), 2)         # 黒い枠線
+                if perimeter == 0 or area < 30 or area > 10000:  # 最大面積を5000から10000に増加
+                    continue
+                    
+                circularity = 4 * np.pi * (area / (perimeter * perimeter))
+                if circularity < 0.6:
+                    continue
                 
-                # 錆番号とサイズを表示
-                text = f"{rust_size}-{rust_contour_count}"
-                thickness = 2
+                rust_contour_count += 1
                 
-                # テキストサイズを取得
-                (text_width, text_height), baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+                # 錆のサイズを分類（2分別）
+                if area < 1000:
+                    rust_size = "SMALL"
+                    rust_color = (0, 255, 255)    # 黄色
+                    line_thickness = 2
+                    marker_radius = 8
+                    font_scale = 0.7
+                else:
+                    rust_size = "LARGE"
+                    rust_color = (0, 0, 255)      # 赤
+                    line_thickness = 4
+                    marker_radius = 12
+                    font_scale = 0.8
                 
-                # 背景の矩形を描画（白背景、サイズ色の枠）
-                bg_x1 = cx - text_width // 2 - 5
-                bg_y1 = cy - 30 - text_height
-                bg_x2 = cx + text_width // 2 + 5
-                bg_y2 = cy - 30 + baseline
+                # サイズに応じた錆の輪郭を描画
+                cv2.drawContours(plate_with_rust, [cnt], -1, rust_color, line_thickness)
                 
-                cv2.rectangle(plate_with_rust, (bg_x1, bg_y1), (bg_x2, bg_y2), (255, 255, 255), -1)  # 白背景
-                cv2.rectangle(plate_with_rust, (bg_x1, bg_y1), (bg_x2, bg_y2), rust_color, 2)       # サイズ色の枠
+                # 錆領域を半透明で塗りつぶし（サイズに応じて色を変更）
+                rust_overlay = plate_with_rust.copy()
+                cv2.fillPoly(rust_overlay, [cnt], rust_color)
+                plate_with_rust = cv2.addWeighted(plate_with_rust, 0.8, rust_overlay, 0.2, 0)
                 
-                # テキストを描画
-                cv2.putText(plate_with_rust, text, (cx - text_width // 2, cy - 30), 
-                           cv2.FONT_HERSHEY_SIMPLEX, font_scale, rust_color, thickness)
-                
-                # 面積も小さく表示
-                area_text = f"{area}px"
-                cv2.putText(plate_with_rust, area_text, (cx - 20, cy + 20), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, rust_color, 1)
-        
-        # 板上の錆分析画像を保存
-        plate_rust_filename = f"plate_{plate_id}_rust_analysis_{session_timestamp}_{frame_count:06d}.jpg"
-        plate_rust_filepath = os.path.join(session_folder, plate_rust_filename)
-        cv2.imwrite(plate_rust_filepath, plate_with_rust)
-        
-        print(f"Saved rust analysis image for plate {plate_id}: {plate_rust_filename}")
-        save_counter += 2  # マスクと分析画像の2枚
+                # 錆の中心にサイズ別マーカーを追加
+                M = cv2.moments(cnt)
+                if M["m00"] != 0:
+                    cx = int(M["m10"]/M["m00"])
+                    cy = int(M["m01"]/M["m00"])
+                    
+                    # サイズに応じた円形マーカー
+                    cv2.circle(plate_with_rust, (cx, cy), marker_radius, (255, 255, 255), -1)  # 白い背景円
+                    cv2.circle(plate_with_rust, (cx, cy), marker_radius, (0, 0, 0), 2)         # 黒い枠線
+                    
+                    # 錆番号とサイズを表示
+                    text = f"{rust_size}-{rust_contour_count}"
+                    thickness = 2
+                    
+                    # テキストサイズを取得
+                    (text_width, text_height), baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+                    
+                    # 背景の矩形を描画（白背景、サイズ色の枠）
+                    bg_x1 = cx - text_width // 2 - 5
+                    bg_y1 = cy - 30 - text_height
+                    bg_x2 = cx + text_width // 2 + 5
+                    bg_y2 = cy - 30 + baseline
+                    
+                    cv2.rectangle(plate_with_rust, (bg_x1, bg_y1), (bg_x2, bg_y2), (255, 255, 255), -1)  # 白背景
+                    cv2.rectangle(plate_with_rust, (bg_x1, bg_y1), (bg_x2, bg_y2), rust_color, 2)       # サイズ色の枠
+                    
+                    # テキストを描画
+                    cv2.putText(plate_with_rust, text, (cx - text_width // 2, cy - 30), 
+                               cv2.FONT_HERSHEY_SIMPLEX, font_scale, rust_color, thickness)
+                    
+                    # 面積も小さく表示
+                    area_text = f"{area}px"
+                    cv2.putText(plate_with_rust, area_text, (cx - 20, cy + 20), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, rust_color, 1)
+            
+            # 板上の錆分析画像を保存
+            plate_rust_filename = f"plate_{plate_id}_rust_analysis_{session_timestamp}_{frame_count:06d}.jpg"
+            plate_rust_filepath = os.path.join(session_folder, plate_rust_filename)
+            cv2.imwrite(plate_rust_filepath, plate_with_rust)
+            
+            print(f"Saved rust analysis image for plate {plate_id}: {plate_rust_filename}")
+            save_counter += 2  # マスクと分析画像の2枚
     
-    # 3. 詳細な分析結果をテキストファイルとして保存
+    # 3. 詳細な分析結果をテキストファイルとして保存（常に保存）
     analysis_filename = f"rust_analysis_{session_timestamp}_{frame_count:06d}.txt"
     analysis_filepath = os.path.join(session_folder, analysis_filename)
     with open(analysis_filepath, 'w', encoding='utf-8') as f:
@@ -817,9 +818,9 @@ while True:
                 }
                 print(f"Updated rust mask for left-down panel (Plate {leftdown_rust_info['plate_id']})")
             
-            # 一時停止時に検出画像を保存
+            # 一時停止時に検出画像を保存（錆分析画像も含む）
             if detections_with_confidence:
-                save_detection_images(frame, detections_with_confidence, leftup_frame_count, leftup_info, leftdown_rust_info, rust_analysis)
+                save_detection_images(frame, detections_with_confidence, leftup_frame_count, leftup_info, leftdown_rust_info, rust_analysis, save_leftup=True, save_leftdown=True)
                 print(f"Saved rust detection images and analysis results (Total: {save_counter} files)")
 
 cap.release()
