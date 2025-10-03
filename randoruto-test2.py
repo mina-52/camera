@@ -38,14 +38,14 @@ def analyze_image_brightness(img):
     
     return is_white_background, mean_brightness
 
-def check_is_target_color(hsv_pixel, brightness_threshold=80, is_white_landolt=False):
+def check_is_target_color(hsv_pixel, brightness_threshold=90, is_white_landolt=False):
     """HSV値がターゲット色に近いかをチェック（ランドルト環の色判定）"""
     h, s, v = hsv_pixel
     
     if is_white_landolt:
         # 白いランドルト環の場合：白い部分がランドルト環、黒い部分が穴
         # 白の認識範囲を広くする（閾値を下げる）
-        white_threshold = 105  # より広い範囲で白を認識（255-135=120以上）
+        white_threshold = 115  # より広い範囲で白を認識（255-135=120以上）
         return v >= white_threshold  # 明るい部分をランドルト環として認識
     else:
         # 黒いランドルト環の場合：黒い部分がランドルト環、白い部分が穴
@@ -100,8 +100,9 @@ def detect_landolt_gaps(img, center_x, center_y, num_circles=20, min_match_ratio
     max_radius = min(W, H) // 3
     min_radius = max_radius * 0.1
     
-    # 同心円の半径を計算（外側から内側へ）
-    radii = np.linspace(max_radius * 0.9, min_radius, num_circles)
+    # 同心円の半径を計算（外側から内側へ、外側3つを除外）
+    all_radii = np.linspace(max_radius * 0.9, min_radius, num_circles + 3)
+    radii = all_radii[3:]  # 外側の3つを除外
     
     # ブラックランドルト環用の変数
     black_valid_circles = []
@@ -396,8 +397,9 @@ def create_hsv_binary_visualization(img, center_x, center_y, num_circles=20, bri
     max_radius = min(W, H) // 3
     min_radius = max_radius * 0.1
     
-    # 同心円の半径を計算（外側から内側へ）
-    radii = np.linspace(max_radius * 0.9, min_radius, num_circles)
+    # 同心円の半径を計算（外側から内側へ、外側3つを除外）
+    all_radii = np.linspace(max_radius * 0.9, min_radius, num_circles + 3)
+    radii = all_radii[3:]  # 外側の3つを除外
     
     for radius in radii:
         # 円周上のサンプル点を取得
@@ -478,8 +480,9 @@ def create_hsv_overlay_on_original(img, center_x, center_y, num_circles=20, brig
     max_radius = min(W, H) // 3
     min_radius = max_radius * 0.1
     
-    # 同心円の半径を計算（外側から内側へ）
-    radii = np.linspace(max_radius * 0.9, min_radius, num_circles)
+    # 同心円の半径を計算（外側から内側へ、外側3つを除外）
+    all_radii = np.linspace(max_radius * 0.9, min_radius, num_circles + 3)
+    radii = all_radii[3:]  # 外側の3つを除外
     
     # 各円についてブラックとホワイトの両方をチェック
     black_valid_radii = []
@@ -776,7 +779,7 @@ def draw_landolt_analysis(img, analysis_result):
 # ----------------------------------------------------
 # 1. OBS仮想カメラの読み込み設定
 # ----------------------------------------------------
-cap = cv2.VideoCapture(0)  # 仮想カメラのインデックス。環境に合わせて変更してください
+cap = cv2.VideoCapture(1)  # 仮想カメラのインデックス。環境に合わせて変更してください
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 cap.set(cv2.CAP_PROP_FPS, 30)
