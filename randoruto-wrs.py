@@ -38,18 +38,21 @@ def analyze_image_brightness(img):
     
     return is_white_background, mean_brightness
 
-def check_is_target_color(hsv_pixel, brightness_threshold=90, is_white_landolt=False):
-    """HSV値がターゲット色に近いかをチェック（ランドルト環の色判定）"""
-    h, s, v = hsv_pixel
+def check_is_target_color_rgb(rgb_pixel, brightness_threshold=90, is_white_landolt=False):
+    """RGB値がターゲット色に近いかをチェック（ランドルト環の色判定）"""
+    r, g, b = rgb_pixel
+    
+    # RGB値から明度を計算（0.299*R + 0.587*G + 0.114*B）
+    brightness = int(0.299 * r + 0.587 * g + 0.114 * b)
     
     if is_white_landolt:
         # 白いランドルト環の場合：白い部分がランドルト環、黒い部分が穴
         # 白の認識範囲を広くする（閾値を下げる）
         white_threshold = 115  # より広い範囲で白を認識（255-135=120以上）
-        return v >= white_threshold  # 明るい部分をランドルト環として認識
+        return brightness >= white_threshold  # 明るい部分をランドルト環として認識
     else:
         # 黒いランドルト環の場合：黒い部分がランドルト環、白い部分が穴
-        return v <= brightness_threshold  # 暗い部分をランドルト環として認識
+        return brightness <= brightness_threshold  # 暗い部分をランドルト環として認識
 
 def bilinear_sample_gray(gray, xs, ys):
     """グレースケール画像での双線形補間サンプリング"""
@@ -88,9 +91,8 @@ def detect_landolt_gaps(img, center_x, center_y, num_circles=20, min_match_ratio
     # 画像全体の明度を分析
     is_white_background, mean_brightness = analyze_image_brightness(img)
     
-    # BGRをRGBに変換してからHSVに変換
+    # BGRをRGBに変換
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    hsv_img = rgb_to_hsv_opencv(img_rgb)
     
     # グレースケール変換
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -139,8 +141,8 @@ def detect_landolt_gaps(img, center_x, center_y, num_circles=20, min_match_ratio
         x_int = np.clip(np.round(x_valid).astype(int), 0, W-1)
         y_int = np.clip(np.round(y_valid).astype(int), 0, H-1)
         
-        # HSV値を取得
-        hsv_samples = hsv_img[y_int, x_int]
+        # RGB値を取得
+        rgb_samples = img_rgb[y_int, x_int]
         
         # ブラックランドルト環の検出（黒い部分がランドルト環、白い部分が穴）
         black_matches = []
@@ -150,9 +152,9 @@ def detect_landolt_gaps(img, center_x, center_y, num_circles=20, min_match_ratio
         white_matches = []
         white_gap_angles = []
         
-        for i, hsv_pixel in enumerate(hsv_samples):
+        for i, rgb_pixel in enumerate(rgb_samples):
             # ブラックランドルト環の判定
-            is_black_landolt = check_is_target_color(hsv_pixel, brightness_threshold=80, is_white_landolt=False)
+            is_black_landolt = check_is_target_color_rgb(rgb_pixel, brightness_threshold=80, is_white_landolt=False)
             black_matches.append(is_black_landolt)
             
             if not is_black_landolt:
@@ -161,7 +163,7 @@ def detect_landolt_gaps(img, center_x, center_y, num_circles=20, min_match_ratio
                 black_gap_angles.append(angle_deg)
             
             # ホワイトランドルト環の判定
-            is_white_landolt = check_is_target_color(hsv_pixel, brightness_threshold=80, is_white_landolt=True)
+            is_white_landolt = check_is_target_color_rgb(rgb_pixel, brightness_threshold=80, is_white_landolt=True)
             white_matches.append(is_white_landolt)
             
             if not is_white_landolt:
@@ -367,9 +369,9 @@ def angle_to_clock_hour(angle_deg):
     hour = int((hour_angle / 30) + 0.5) % 12
     return hour
 
-def create_hsv_binary_visualization(img, center_x, center_y, num_circles=20, brightness_threshold=80):
+def create_rgb_binary_visualization(img, center_x, center_y, num_circles=20, brightness_threshold=80):
     """
-    HSVの分類結果を可視化する画像を作成（黒/白ランドルト環自動判別）
+    RGBの分類結果を可視化する画像を作成（黒/白ランドルト環自動判別）
     
     Parameters:
     - img: 入力画像 (BGR)
@@ -384,9 +386,8 @@ def create_hsv_binary_visualization(img, center_x, center_y, num_circles=20, bri
     is_white_background, mean_brightness = analyze_image_brightness(img)
     is_white_landolt = is_white_background  # 白背景なら白いランドルト環
     
-    # BGRをRGBに変換してからHSVに変換
+    # BGRをRGBに変換
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    hsv_img = rgb_to_hsv_opencv(img_rgb)
     
     H, W = img.shape[:2]
     
@@ -425,12 +426,12 @@ def create_hsv_binary_visualization(img, center_x, center_y, num_circles=20, bri
         x_int = np.clip(np.round(x_valid).astype(int), 0, W-1)
         y_int = np.clip(np.round(y_valid).astype(int), 0, H-1)
         
-        # HSV値を取得
-        hsv_samples = hsv_img[y_int, x_int]
+        # RGB値を取得
+        rgb_samples = img_rgb[y_int, x_int]
         
         # ランドルト環分類結果を描画
-        for i, hsv_pixel in enumerate(hsv_samples):
-            is_landolt_color = check_is_target_color(hsv_pixel, brightness_threshold, is_white_landolt)
+        for i, rgb_pixel in enumerate(rgb_samples):
+            is_landolt_color = check_is_target_color_rgb(rgb_pixel, brightness_threshold, is_white_landolt)
             x, y = x_int[i], y_int[i]
             
             if is_landolt_color:
@@ -449,9 +450,9 @@ def create_hsv_binary_visualization(img, center_x, center_y, num_circles=20, bri
     
     return binary_img
 
-def create_hsv_overlay_on_original(img, center_x, center_y, num_circles=20, brightness_threshold=80, alpha=0.6):
+def create_rgb_overlay_on_original(img, center_x, center_y, num_circles=20, brightness_threshold=80, alpha=0.6):
     """
-    元画像にHSVの分類結果を半透明でオーバーレイした画像を作成（ブラックとホワイトの両方を同時表示）
+    元画像にRGBの分類結果を半透明でオーバーレイした画像を作成（ブラックとホワイトの両方を同時表示）
     80%以上のランドルト環色を持つランドルト環のみを表示し、色分けして表示
     
     Parameters:
@@ -462,11 +463,10 @@ def create_hsv_overlay_on_original(img, center_x, center_y, num_circles=20, brig
     - alpha: オーバーレイの透明度 (0.0-1.0)
     
     Returns:
-    - overlay_img: 元画像にHSV分類結果をオーバーレイした画像
+    - overlay_img: 元画像にRGB分類結果をオーバーレイした画像
     """
-    # BGRをRGBに変換してからHSVに変換
+    # BGRをRGBに変換
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    hsv_img = rgb_to_hsv_opencv(img_rgb)
     
     H, W = img.shape[:2]
     
@@ -512,18 +512,18 @@ def create_hsv_overlay_on_original(img, center_x, center_y, num_circles=20, brig
         x_int = np.clip(np.round(x_valid).astype(int), 0, W-1)
         y_int = np.clip(np.round(y_valid).astype(int), 0, H-1)
         
-        # HSV値を取得
-        hsv_samples = hsv_img[y_int, x_int]
+        # RGB値を取得
+        rgb_samples = img_rgb[y_int, x_int]
         
         # ブラックランドルト環色一致率を計算
         black_landolt_count = 0
         white_landolt_count = 0
-        total_count = len(hsv_samples)
+        total_count = len(rgb_samples)
         
-        for hsv_pixel in hsv_samples:
-            if check_is_target_color(hsv_pixel, brightness_threshold, is_white_landolt=False):
+        for rgb_pixel in rgb_samples:
+            if check_is_target_color_rgb(rgb_pixel, brightness_threshold, is_white_landolt=False):
                 black_landolt_count += 1
-            if check_is_target_color(hsv_pixel, brightness_threshold, is_white_landolt=True):
+            if check_is_target_color_rgb(rgb_pixel, brightness_threshold, is_white_landolt=True):
                 white_landolt_count += 1
         
         black_match_ratio = black_landolt_count / total_count if total_count > 0 else 0.0
@@ -603,12 +603,12 @@ def create_hsv_overlay_on_original(img, center_x, center_y, num_circles=20, brig
             x_int = np.clip(np.round(x_valid).astype(int), 0, W-1)
             y_int = np.clip(np.round(y_valid).astype(int), 0, H-1)
             
-            # HSV値を取得
-            hsv_samples = hsv_img[y_int, x_int]
+            # RGB値を取得
+            rgb_samples = img_rgb[y_int, x_int]
             
             # ブラックランドルト環の部分と穴を描画
-            for i, hsv_pixel in enumerate(hsv_samples):
-                is_black_landolt = check_is_target_color(hsv_pixel, brightness_threshold, is_white_landolt=False)
+            for i, rgb_pixel in enumerate(rgb_samples):
+                is_black_landolt = check_is_target_color_rgb(rgb_pixel, brightness_threshold, is_white_landolt=False)
                 x, y = x_int[i], y_int[i]
                 
                 if is_black_landolt:
@@ -648,12 +648,12 @@ def create_hsv_overlay_on_original(img, center_x, center_y, num_circles=20, brig
             x_int = np.clip(np.round(x_valid).astype(int), 0, W-1)
             y_int = np.clip(np.round(y_valid).astype(int), 0, H-1)
             
-            # HSV値を取得
-            hsv_samples = hsv_img[y_int, x_int]
+            # RGB値を取得
+            rgb_samples = img_rgb[y_int, x_int]
             
             # ホワイトランドルト環の部分と穴を描画
-            for i, hsv_pixel in enumerate(hsv_samples):
-                is_white_landolt = check_is_target_color(hsv_pixel, brightness_threshold, is_white_landolt=True)
+            for i, rgb_pixel in enumerate(rgb_samples):
+                is_white_landolt = check_is_target_color_rgb(rgb_pixel, brightness_threshold, is_white_landolt=True)
                 x, y = x_int[i], y_int[i]
                 
                 if is_white_landolt:
@@ -805,11 +805,12 @@ print(f"セッションフォルダーを作成しました: {session_folder}")
 save_counter = 0
 pause_counter = 0
 image_save_counter = 0
+pause_sequence_counter = 0  # pauseごとの連番カウンター
 
-# YOLOv8nモデルのパス
+# YOLOv8nモデルのパス - target.ptを使用
 # 学習済みYOLOモデルファイルを読み込み
-# weights.pt: 汎用的な物体検出用の学習済みモデル
-model = YOLO('weights.pt')  # ここをあなたのモデルのパスに置き換えてください
+# target.pt: ターゲット検出専用の学習済みモデル
+model = YOLO('target.pt')  # target.ptファイルを使用
 
 print("リアルタイム検出を開始します。'q'キーで終了します。")
 
@@ -854,7 +855,11 @@ save_counter = 0
 
 def save_detection_images(frame, detections_with_confidence, frame_count, leftup_image=None, leftdown_image=None, save_leftup=False, save_leftdown=False):
     """一時停止時に検出画像を保存する関数（左上ストップ時：左上、右下、全体の3種類）"""
-    global save_counter, image_save_counter
+    global save_counter, image_save_counter, pause_sequence_counter
+    
+    # pauseを押すたびに連番を1増やす
+    if save_leftup or save_leftdown:
+        pause_sequence_counter += 1
     
     # 検出物体がない場合でも保存を継続
     
@@ -864,7 +869,7 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
     current_time = datetime.now()
     time_str = current_time.strftime("%Y%m%d_%H%M%S")
     # 連番でファイル名を生成（6桁のゼロパディング）
-    base_filename = f"capture_{save_counter + 1:06d}_{time_str}_frame{frame_count}_{detection_count}objects"
+    base_filename = f"capture_{pause_sequence_counter:06d}_{time_str}_frame{frame_count}_{detection_count}objects"
     
     # 全体画像：全ての検出物体にバウンディングボックスを付けた画像を保存（左上ストップ時のみ）
     if save_leftup:
@@ -882,10 +887,9 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
             cv2.putText(annotated_img, text, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
         
         # 全体画像を保存
-        whole_filepath = os.path.join(session_folder, f"{base_filename}_whole_detection.jpg")
+        whole_filepath = os.path.join(session_folder, f"{base_filename}_R_whole_detection.jpg")
         cv2.imwrite(whole_filepath, annotated_img)
-        print(f"全体画像（検出結果）を保存しました: {base_filename}_whole_detection.jpg (検出物体数: {detection_count})")
-        save_counter += 1
+        print(f"全体画像（検出結果）を保存しました: {base_filename}_R_whole_detection.jpg (検出物体数: {detection_count})")
         image_save_counter += 1
     
     # 左上画像：HSVオーバーレイ画像とオーバーレイなし画像を保存（save_leftup=Trueの場合のみ）
@@ -899,21 +903,19 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
                 center_y = save_size // 2
                 
                 # 1. 左上画像（オーバーレイなし）を保存
-                leftup_original_filepath = os.path.join(session_folder, f"{base_filename}_leftup_original.jpg")
+                leftup_original_filepath = os.path.join(session_folder, f"{base_filename}_M_leftup_original.jpg")
                 cv2.imwrite(leftup_original_filepath, resized_img)
-                print(f"左上画像（オーバーレイなし）を保存しました: {base_filename}_leftup_original.jpg")
-                save_counter += 1
+                print(f"左上画像（オーバーレイなし）を保存しました: {base_filename}_M_leftup_original.jpg")
                 image_save_counter += 1
                 
-                # 2. HSVオーバーレイ画像を作成
-                hsv_overlay_img = create_hsv_overlay_on_original(resized_img, center_x, center_y, 
+                # 2. RGBオーバーレイ画像を作成
+                rgb_overlay_img = create_rgb_overlay_on_original(resized_img, center_x, center_y, 
                                                                num_circles=20, brightness_threshold=80, alpha=0.6)
                 
-                # 3. 左上画像（HSVオーバーレイ）を保存
-                leftup_filepath = os.path.join(session_folder, f"{base_filename}_leftup_hsv.jpg")
-                cv2.imwrite(leftup_filepath, hsv_overlay_img)
-                print(f"左上画像（HSVオーバーレイ）を保存しました: {base_filename}_leftup_hsv.jpg")
-                save_counter += 1
+                # 3. 左上画像（RGBオーバーレイ）を保存
+                leftup_filepath = os.path.join(session_folder, f"{base_filename}_A_leftup_rgb.jpg")
+                cv2.imwrite(leftup_filepath, rgb_overlay_img)
+                print(f"左上画像（RGBオーバーレイ）を保存しました: {base_filename}_A_leftup_rgb.jpg")
                 image_save_counter += 1
                 
             except Exception as e:
@@ -921,18 +923,16 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
         else:
             # leftup_imageがない場合は、no_targetファイル名で保存
             # オーバーレイなし画像
-            leftup_original_filepath = os.path.join(session_folder, f"{base_filename}_leftup_original_no_target.jpg")
+            leftup_original_filepath = os.path.join(session_folder, f"{base_filename}_M_leftup_original_no_target.jpg")
             empty_img = np.zeros((512, 512, 3), dtype=np.uint8)
             cv2.imwrite(leftup_original_filepath, empty_img)
-            print(f"左上画像（オーバーレイなし、No Target）を保存しました: {base_filename}_leftup_original_no_target.jpg")
-            save_counter += 1
+            print(f"左上画像（オーバーレイなし、No Target）を保存しました: {base_filename}_M_leftup_original_no_target.jpg")
             image_save_counter += 1
             
             # HSVオーバーレイ画像
-            leftup_filepath = os.path.join(session_folder, f"{base_filename}_leftup_hsv_no_target.jpg")
+            leftup_filepath = os.path.join(session_folder, f"{base_filename}_A_leftup_hsv_no_target.jpg")
             cv2.imwrite(leftup_filepath, empty_img)
-            print(f"左上画像（HSVオーバーレイ、No Target）を保存しました: {base_filename}_leftup_hsv_no_target.jpg")
-            save_counter += 1
+            print(f"左上画像（HSVオーバーレイ、No Target）を保存しました: {base_filename}_A_leftup_hsv_no_target.jpg")
             image_save_counter += 1
     
     # 左下画像：セカンダリ検出画像を保存（save_leftdown=Trueの場合のみ）
@@ -953,10 +953,9 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
                 cv2.putText(annotated_img, text, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
             
             # 全体画像を保存
-            whole_filepath = os.path.join(session_folder, f"{base_filename}_whole_detection.jpg")
+            whole_filepath = os.path.join(session_folder, f"{base_filename}_R_whole_detection.jpg")
             cv2.imwrite(whole_filepath, annotated_img)
-            print(f"全体画像（検出結果）を保存しました: {base_filename}_whole_detection.jpg (検出物体数: {detection_count})")
-            save_counter += 1
+            print(f"全体画像（検出結果）を保存しました: {base_filename}_R_whole_detection.jpg (検出物体数: {detection_count})")
             image_save_counter += 1
             
         except Exception as e:
@@ -969,25 +968,21 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
                 resized_leftdown = cv2.resize(leftdown_image, (save_size, save_size))
                 
                 # 左下画像を保存
-                leftdown_filepath = os.path.join(session_folder, f"{base_filename}_leftdown.jpg")
+                leftdown_filepath = os.path.join(session_folder, f"{base_filename}_M_leftdown.jpg")
                 cv2.imwrite(leftdown_filepath, resized_leftdown)
-                print(f"左下画像（セカンダリ検出）を保存しました: {base_filename}_leftdown.jpg")
-                save_counter += 1
+                print(f"左下画像（セカンダリ検出）を保存しました: {base_filename}_M_leftdown.jpg")
                 image_save_counter += 1
                 
             except Exception as e:
                 print(f"左下画像の保存に失敗しました: {e}")
         else:
             # leftdown_imageがない場合は、no_targetファイル名で保存
-            leftdown_filepath = os.path.join(session_folder, f"{base_filename}_leftdown_no_target.jpg")
+            leftdown_filepath = os.path.join(session_folder, f"{base_filename}_M_leftdown_no_target.jpg")
             # 空の画像を作成（512x512の黒画像）
             empty_img = np.zeros((512, 512, 3), dtype=np.uint8)
             cv2.imwrite(leftdown_filepath, empty_img)
-            print(f"左下画像（No Target）を保存しました: {base_filename}_leftdown_no_target.jpg")
-            save_counter += 1
+            print(f"左下画像（No Target）を保存しました: {base_filename}_M_leftdown_no_target.jpg")
             image_save_counter += 1
-    
-    save_counter += 1
 
 def add_colored_border(panel, is_paused, border_thickness=8):
     """パネルに一時停止/再生状態を示す色付きの縁取りを追加"""
@@ -1170,12 +1165,12 @@ while True:
             landolt_result = detect_landolt_gaps(resized_img, center_x, center_y, 
                                                num_circles=20, min_match_ratio=0.8)
             
-            # HSVオーバーレイ画像を作成（80%以上のランドルト環のみ表示）
-            hsv_overlay_img = create_hsv_overlay_on_original(resized_img, center_x, center_y, 
+            # RGBオーバーレイ画像を作成（80%以上のランドルト環のみ表示）
+            rgb_overlay_img = create_rgb_overlay_on_original(resized_img, center_x, center_y, 
                                                            num_circles=20, brightness_threshold=80, alpha=0.6)
             
-            # HSVオーバーレイ画像をパネルの正しい位置に配置
-            panel_rd[start_y:start_y+square_size, start_x:start_x+square_size] = hsv_overlay_img
+            # RGBオーバーレイ画像をパネルの正しい位置に配置
+            panel_rd[start_y:start_y+square_size, start_x:start_x+square_size] = rgb_overlay_img
             
             # 選択されたランドルト環タイプの情報を取得
             selected_type = landolt_result.get('selected_type', None)
