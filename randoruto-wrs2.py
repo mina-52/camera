@@ -805,6 +805,7 @@ print(f"セッションフォルダーを作成しました: {session_folder}")
 save_counter = 0
 pause_counter = 0
 image_save_counter = 0
+pause_sequence_counter = 0  # pauseごとの連番カウンター
 
 # YOLOv8nモデルのパス
 # 学習済みYOLOモデルファイルを読み込み
@@ -854,7 +855,11 @@ save_counter = 0
 
 def save_detection_images(frame, detections_with_confidence, frame_count, leftup_image=None, leftdown_image=None, save_leftup=False, save_leftdown=False):
     """一時停止時に検出画像を保存する関数（左上ストップ時：左上、右下、全体の3種類）"""
-    global save_counter, image_save_counter
+    global save_counter, image_save_counter, pause_sequence_counter
+    
+    # pauseを押すたびに連番を1増やす
+    if save_leftup or save_leftdown:
+        pause_sequence_counter += 1
     
     # 検出物体がない場合でも保存を継続
     
@@ -864,7 +869,7 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
     current_time = datetime.now()
     time_str = current_time.strftime("%Y%m%d_%H%M%S")
     # 連番でファイル名を生成（6桁のゼロパディング）
-    base_filename = f"capture_{save_counter + 1:06d}_{time_str}_frame{frame_count}_{detection_count}objects"
+    base_filename = f"capture_{pause_sequence_counter:06d}_{time_str}_frame{frame_count}_{detection_count}objects"
     
     # 全体画像：全ての検出物体にバウンディングボックスを付けた画像を保存（左上ストップ時のみ）
     if save_leftup:
@@ -882,10 +887,9 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
             cv2.putText(annotated_img, text, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
         
         # 全体画像を保存
-        whole_filepath = os.path.join(session_folder, f"{base_filename.replace('capture_', 'capture_R_')}_whole_detection.jpg")
+        whole_filepath = os.path.join(session_folder, f"{base_filename}_R_whole_detection.jpg")
         cv2.imwrite(whole_filepath, annotated_img)
-        print(f"全体画像（検出結果）を保存しました: {base_filename.replace('capture_', 'capture_R_')}_whole_detection.jpg (検出物体数: {detection_count})")
-        save_counter += 1
+        print(f"全体画像（検出結果）を保存しました: {base_filename}_R_whole_detection.jpg (検出物体数: {detection_count})")
         image_save_counter += 1
     
     # 左上画像：HSVオーバーレイ画像とオーバーレイなし画像を保存（save_leftup=Trueの場合のみ）
@@ -899,10 +903,9 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
                 center_y = save_size // 2
                 
                 # 1. 左上画像（オーバーレイなし）を保存
-                leftup_original_filepath = os.path.join(session_folder, f"{base_filename.replace('capture_', 'capture_M_')}_leftup_original.jpg")
+                leftup_original_filepath = os.path.join(session_folder, f"{base_filename}_M_leftup_original.jpg")
                 cv2.imwrite(leftup_original_filepath, resized_img)
-                print(f"左上画像（オーバーレイなし）を保存しました: {base_filename.replace('capture_', 'capture_M_')}_leftup_original.jpg")
-                save_counter += 1
+                print(f"左上画像（オーバーレイなし）を保存しました: {base_filename}_M_leftup_original.jpg")
                 image_save_counter += 1
                 
                 # 2. HSVオーバーレイ画像を作成
@@ -910,10 +913,9 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
                                                                num_circles=20, brightness_threshold=80, alpha=0.6)
                 
                 # 3. 左上画像（HSVオーバーレイ）を保存
-                leftup_filepath = os.path.join(session_folder, f"{base_filename.replace('capture_', 'capture_A_')}_leftup_hsv.jpg")
+                leftup_filepath = os.path.join(session_folder, f"{base_filename}_A_leftup_hsv.jpg")
                 cv2.imwrite(leftup_filepath, hsv_overlay_img)
-                print(f"左上画像（HSVオーバーレイ）を保存しました: {base_filename.replace('capture_', 'capture_A_')}_leftup_hsv.jpg")
-                save_counter += 1
+                print(f"左上画像（HSVオーバーレイ）を保存しました: {base_filename}_A_leftup_hsv.jpg")
                 image_save_counter += 1
                 
             except Exception as e:
@@ -921,18 +923,16 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
         else:
             # leftup_imageがない場合は、no_targetファイル名で保存
             # オーバーレイなし画像
-            leftup_original_filepath = os.path.join(session_folder, f"{base_filename.replace('capture_', 'capture_M_')}_leftup_original_no_target.jpg")
+            leftup_original_filepath = os.path.join(session_folder, f"{base_filename}_M_leftup_original_no_target.jpg")
             empty_img = np.zeros((512, 512, 3), dtype=np.uint8)
             cv2.imwrite(leftup_original_filepath, empty_img)
-            print(f"左上画像（オーバーレイなし、No Target）を保存しました: {base_filename.replace('capture_', 'capture_M_')}_leftup_original_no_target.jpg")
-            save_counter += 1
+            print(f"左上画像（オーバーレイなし、No Target）を保存しました: {base_filename}_M_leftup_original_no_target.jpg")
             image_save_counter += 1
             
             # HSVオーバーレイ画像
-            leftup_filepath = os.path.join(session_folder, f"{base_filename.replace('capture_', 'capture_A_')}_leftup_hsv_no_target.jpg")
+            leftup_filepath = os.path.join(session_folder, f"{base_filename}_A_leftup_hsv_no_target.jpg")
             cv2.imwrite(leftup_filepath, empty_img)
-            print(f"左上画像（HSVオーバーレイ、No Target）を保存しました: {base_filename.replace('capture_', 'capture_A_')}_leftup_hsv_no_target.jpg")
-            save_counter += 1
+            print(f"左上画像（HSVオーバーレイ、No Target）を保存しました: {base_filename}_A_leftup_hsv_no_target.jpg")
             image_save_counter += 1
     
     # 左下画像：セカンダリ検出画像を保存（save_leftdown=Trueの場合のみ）
@@ -953,10 +953,9 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
                 cv2.putText(annotated_img, text, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
             
             # 全体画像を保存
-            whole_filepath = os.path.join(session_folder, f"{base_filename.replace('capture_', 'capture_R_')}_whole_detection.jpg")
+            whole_filepath = os.path.join(session_folder, f"{base_filename}_R_whole_detection.jpg")
             cv2.imwrite(whole_filepath, annotated_img)
-            print(f"全体画像（検出結果）を保存しました: {base_filename.replace('capture_', 'capture_R_')}_whole_detection.jpg (検出物体数: {detection_count})")
-            save_counter += 1
+            print(f"全体画像（検出結果）を保存しました: {base_filename}_R_whole_detection.jpg (検出物体数: {detection_count})")
             image_save_counter += 1
             
         except Exception as e:
@@ -969,25 +968,21 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
                 resized_leftdown = cv2.resize(leftdown_image, (save_size, save_size))
                 
                 # 左下画像を保存
-                leftdown_filepath = os.path.join(session_folder, f"{base_filename.replace('capture_', 'capture_M_')}_leftdown.jpg")
+                leftdown_filepath = os.path.join(session_folder, f"{base_filename}_M_leftdown.jpg")
                 cv2.imwrite(leftdown_filepath, resized_leftdown)
-                print(f"左下画像（セカンダリ検出）を保存しました: {base_filename.replace('capture_', 'capture_M_')}_leftdown.jpg")
-                save_counter += 1
+                print(f"左下画像（セカンダリ検出）を保存しました: {base_filename}_M_leftdown.jpg")
                 image_save_counter += 1
                 
             except Exception as e:
                 print(f"左下画像の保存に失敗しました: {e}")
         else:
             # leftdown_imageがない場合は、no_targetファイル名で保存
-            leftdown_filepath = os.path.join(session_folder, f"{base_filename.replace('capture_', 'capture_M_')}_leftdown_no_target.jpg")
+            leftdown_filepath = os.path.join(session_folder, f"{base_filename}_M_leftdown_no_target.jpg")
             # 空の画像を作成（512x512の黒画像）
             empty_img = np.zeros((512, 512, 3), dtype=np.uint8)
             cv2.imwrite(leftdown_filepath, empty_img)
-            print(f"左下画像（No Target）を保存しました: {base_filename.replace('capture_', 'capture_M_')}_leftdown_no_target.jpg")
-            save_counter += 1
+            print(f"左下画像（No Target）を保存しました: {base_filename}_M_leftdown_no_target.jpg")
             image_save_counter += 1
-    
-    save_counter += 1
 
 def add_colored_border(panel, is_paused, border_thickness=8):
     """パネルに一時停止/再生状態を示す色付きの縁取りを追加"""
