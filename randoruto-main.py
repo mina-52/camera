@@ -32,6 +32,8 @@ os.makedirs(session_folder)
 print(f"セッションフォルダーを作成しました: {session_folder}")
 
 # YOLOv8nモデルのパス
+# 学習済みYOLOモデルファイルを読み込み
+# weights.pt: 汎用的な物体検出用の学習済みモデル
 model = YOLO('weights.pt')  # ここをあなたのモデルのパスに置き換えてください
 
 print("リアルタイム検出を開始します。'q'キーで終了します。")

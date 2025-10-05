@@ -789,8 +789,8 @@ if not cap.isOpened():
     print("OBSで「仮想カメラを開始」しているか、正しいカメラインデックスか確認してください。")
     exit()
 
-# randoruto-testフォルダーの作成
-save_folder = "randoruto-test"
+# randoruto-wrsフォルダーの作成
+save_folder = "randoruto-wrs"
 if not os.path.exists(save_folder):
     os.makedirs(save_folder)
     print(f"フォルダーを作成しました: {save_folder}")
@@ -853,7 +853,7 @@ leftdown_last_frame_time = time.time()  # 左下最後のフレーム更新時�
 save_counter = 0
 
 def save_detection_images(frame, detections_with_confidence, frame_count, leftup_image=None, leftdown_image=None, save_leftup=False, save_leftdown=False):
-    """一時停止時に検出画像を保存する関数（右上、左上、左下の3つの画像のみ）"""
+    """一時停止時に検出画像を保存する関数（左上ストップ時：左上、右下、全体の3種類）"""
     global save_counter, image_save_counter
     
     # 検出物体がない場合でも保存を継続
@@ -866,27 +866,29 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
     # 連番でファイル名を生成（6桁のゼロパディング）
     base_filename = f"capture_{save_counter + 1:06d}_{time_str}_frame{frame_count}_{detection_count}objects"
     
-    # 右上画像：全ての検出物体にバウンディングボックスを付けた画像を保存
-    annotated_img = frame.copy()
-    for i, detection in enumerate(detections_with_confidence):
-        x1, y1, x2, y2 = detection['box']
-        label = detection['label']
-        confidence = detection['confidence']
+    # 全体画像：全ての検出物体にバウンディングボックスを付けた画像を保存（左上ストップ時のみ）
+    if save_leftup:
+        annotated_img = frame.copy()
+        for i, detection in enumerate(detections_with_confidence):
+            x1, y1, x2, y2 = detection['box']
+            label = detection['label']
+            confidence = detection['confidence']
+            
+            # バウンディングボックスを描画
+            cv2.rectangle(annotated_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            
+            # ラベルと信頼度のテキストを追加
+            text = f"{label}: {confidence:.3f}"
+            cv2.putText(annotated_img, text, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
         
-        # バウンディングボックスを描画
-        cv2.rectangle(annotated_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        
-        # ラベルと信頼度のテキストを追加
-        text = f"{label}: {confidence:.3f}"
-        cv2.putText(annotated_img, text, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+        # 全体画像を保存
+        whole_filepath = os.path.join(session_folder, f"{base_filename.replace('capture_', 'capture_R_')}_whole_detection.jpg")
+        cv2.imwrite(whole_filepath, annotated_img)
+        print(f"全体画像（検出結果）を保存しました: {base_filename.replace('capture_', 'capture_R_')}_whole_detection.jpg (検出物体数: {detection_count})")
+        save_counter += 1
+        image_save_counter += 1
     
-    # 右上画像を保存
-    rightup_filepath = os.path.join(session_folder, f"{base_filename}_rightup.jpg")
-    cv2.imwrite(rightup_filepath, annotated_img)
-    print(f"右上画像を保存しました: {base_filename}_rightup.jpg (検出物体数: {detection_count})")
-    image_save_counter += 1
-    
-    # 左上画像：HSVオーバーレイ画像を保存（save_leftup=Trueの場合のみ）
+    # 左上画像：HSVオーバーレイ画像とオーバーレイなし画像を保存（save_leftup=Trueの場合のみ）
     if save_leftup:
         if leftup_image is not None:
             try:
@@ -896,14 +898,21 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
                 center_x = save_size // 2
                 center_y = save_size // 2
                 
-                # HSVオーバーレイ画像を作成
+                # 1. 左上画像（オーバーレイなし）を保存
+                leftup_original_filepath = os.path.join(session_folder, f"{base_filename.replace('capture_', 'capture_M_')}_leftup_original.jpg")
+                cv2.imwrite(leftup_original_filepath, resized_img)
+                print(f"左上画像（オーバーレイなし）を保存しました: {base_filename.replace('capture_', 'capture_M_')}_leftup_original.jpg")
+                save_counter += 1
+                image_save_counter += 1
+                
+                # 2. HSVオーバーレイ画像を作成
                 hsv_overlay_img = create_hsv_overlay_on_original(resized_img, center_x, center_y, 
                                                                num_circles=20, brightness_threshold=80, alpha=0.6)
                 
-                # 左上画像を保存
-                leftup_filepath = os.path.join(session_folder, f"{base_filename}_leftup_hsv.jpg")
+                # 3. 左上画像（HSVオーバーレイ）を保存
+                leftup_filepath = os.path.join(session_folder, f"{base_filename.replace('capture_', 'capture_A_')}_leftup_hsv.jpg")
                 cv2.imwrite(leftup_filepath, hsv_overlay_img)
-                print(f"左上画像（HSVオーバーレイ）を保存しました: {base_filename}_leftup_hsv.jpg")
+                print(f"左上画像（HSVオーバーレイ）を保存しました: {base_filename.replace('capture_', 'capture_A_')}_leftup_hsv.jpg")
                 save_counter += 1
                 image_save_counter += 1
                 
@@ -911,16 +920,48 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
                 print(f"左上画像の保存に失敗しました: {e}")
         else:
             # leftup_imageがない場合は、no_targetファイル名で保存
-            leftup_filepath = os.path.join(session_folder, f"{base_filename}_leftup_no_target.jpg")
-            # 空の画像を作成（512x512の黒画像）
+            # オーバーレイなし画像
+            leftup_original_filepath = os.path.join(session_folder, f"{base_filename.replace('capture_', 'capture_M_')}_leftup_original_no_target.jpg")
             empty_img = np.zeros((512, 512, 3), dtype=np.uint8)
+            cv2.imwrite(leftup_original_filepath, empty_img)
+            print(f"左上画像（オーバーレイなし、No Target）を保存しました: {base_filename.replace('capture_', 'capture_M_')}_leftup_original_no_target.jpg")
+            save_counter += 1
+            image_save_counter += 1
+            
+            # HSVオーバーレイ画像
+            leftup_filepath = os.path.join(session_folder, f"{base_filename.replace('capture_', 'capture_A_')}_leftup_hsv_no_target.jpg")
             cv2.imwrite(leftup_filepath, empty_img)
-            print(f"左上画像（No Target）を保存しました: {base_filename}_leftup_no_target.jpg")
+            print(f"左上画像（HSVオーバーレイ、No Target）を保存しました: {base_filename.replace('capture_', 'capture_A_')}_leftup_hsv_no_target.jpg")
             save_counter += 1
             image_save_counter += 1
     
     # 左下画像：セカンダリ検出画像を保存（save_leftdown=Trueの場合のみ）
     if save_leftdown:
+        # 全体画像：全ての検出物体にバウンディングボックスを付けた画像を保存
+        try:
+            annotated_img = frame.copy()
+            for i, detection in enumerate(detections_with_confidence):
+                x1, y1, x2, y2 = detection['box']
+                label = detection['label']
+                confidence = detection['confidence']
+                
+                # バウンディングボックスを描画
+                cv2.rectangle(annotated_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                
+                # ラベルと信頼度のテキストを追加
+                text = f"{label}: {confidence:.3f}"
+                cv2.putText(annotated_img, text, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+            
+            # 全体画像を保存
+            whole_filepath = os.path.join(session_folder, f"{base_filename.replace('capture_', 'capture_R_')}_whole_detection.jpg")
+            cv2.imwrite(whole_filepath, annotated_img)
+            print(f"全体画像（検出結果）を保存しました: {base_filename.replace('capture_', 'capture_R_')}_whole_detection.jpg (検出物体数: {detection_count})")
+            save_counter += 1
+            image_save_counter += 1
+            
+        except Exception as e:
+            print(f"全体画像の保存に失敗しました: {e}")
+        
         if leftdown_image is not None:
             try:
                 # 左下画像をリサイズして保存
@@ -928,9 +969,9 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
                 resized_leftdown = cv2.resize(leftdown_image, (save_size, save_size))
                 
                 # 左下画像を保存
-                leftdown_filepath = os.path.join(session_folder, f"{base_filename}_leftdown.jpg")
+                leftdown_filepath = os.path.join(session_folder, f"{base_filename.replace('capture_', 'capture_M_')}_leftdown.jpg")
                 cv2.imwrite(leftdown_filepath, resized_leftdown)
-                print(f"左下画像（セカンダリ検出）を保存しました: {base_filename}_leftdown.jpg")
+                print(f"左下画像（セカンダリ検出）を保存しました: {base_filename.replace('capture_', 'capture_M_')}_leftdown.jpg")
                 save_counter += 1
                 image_save_counter += 1
                 
@@ -938,11 +979,11 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
                 print(f"左下画像の保存に失敗しました: {e}")
         else:
             # leftdown_imageがない場合は、no_targetファイル名で保存
-            leftdown_filepath = os.path.join(session_folder, f"{base_filename}_leftdown_no_target.jpg")
+            leftdown_filepath = os.path.join(session_folder, f"{base_filename.replace('capture_', 'capture_M_')}_leftdown_no_target.jpg")
             # 空の画像を作成（512x512の黒画像）
             empty_img = np.zeros((512, 512, 3), dtype=np.uint8)
             cv2.imwrite(leftdown_filepath, empty_img)
-            print(f"左下画像（No Target）を保存しました: {base_filename}_leftdown_no_target.jpg")
+            print(f"左下画像（No Target）を保存しました: {base_filename.replace('capture_', 'capture_M_')}_leftdown_no_target.jpg")
             save_counter += 1
             image_save_counter += 1
     

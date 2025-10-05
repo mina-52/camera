@@ -37,6 +37,8 @@ pause_counter = 0
 image_save_counter = 0
 
 # YOLOv8nモデルのパス - target.ptを使用
+# 学習済みYOLOモデルファイルを読み込み
+# target.pt: ターゲット検出専用の学習済みモデル
 model = YOLO('target.pt')  # target.ptファイルを使用
 
 print("リアルタイム検出を開始します。'q'キーで終了します。")
