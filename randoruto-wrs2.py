@@ -7,6 +7,27 @@ from datetime import datetime
 import math
 #kome
 
+# ========================================
+# 設定値（一括変更可能）
+# ========================================
+# ブラックランドルト環の閾値（明度判定）
+BLACK_THRESHOLD = 80
+
+# ホワイトランドルト環の閾値（明度判定）
+WHITE_THRESHOLD = 115
+
+# カメラ設定
+CAMERA_INDEX = 0  # カメラのインデックス（通常は0）
+CAMERA_WIDTH = 1280
+CAMERA_HEIGHT = 720
+CAMERA_FPS = 30
+
+# ランドルト環検出設定
+LANDOLT_MATCH_RATIO_THRESHOLD = 0.8  # ランドルト環色一致率の閾値（80%以上）
+LANDOLT_NUM_CIRCLES = 20  # 同心円の数
+LANDOLT_MIN_GAP_SIZE = 5.0  # 最小ギャップサイズ（度）
+LANDOLT_OVERLAY_ALPHA = 0.6  # オーバーレイの透明度
+
 # ----------------------------------------------------
 # ランドルト環の穴検出用関数
 # ----------------------------------------------------
@@ -38,18 +59,18 @@ def analyze_image_brightness(img):
     
     return is_white_background, mean_brightness
 
-def check_is_target_color(hsv_pixel, brightness_threshold=90, is_white_landolt=False):
+def check_is_target_color(hsv_pixel, brightness_threshold=None, is_white_landolt=False):
     """HSV値がターゲット色に近いかをチェック（ランドルト環の色判定）"""
     h, s, v = hsv_pixel
     
     if is_white_landolt:
         # 白いランドルト環の場合：白い部分がランドルト環、黒い部分が穴
         # 白の認識範囲を広くする（閾値を下げる）
-        white_threshold = 115  # より広い範囲で白を認識（255-135=120以上）
-        return v >= white_threshold  # 明るい部分をランドルト環として認識
+        return v >= WHITE_THRESHOLD  # 明るい部分をランドルト環として認識
     else:
         # 黒いランドルト環の場合：黒い部分がランドルト環、白い部分が穴
-        return v <= brightness_threshold  # 暗い部分をランドルト環として認識
+        threshold = brightness_threshold if brightness_threshold is not None else BLACK_THRESHOLD
+        return v <= threshold  # 暗い部分をランドルト環として認識
 
 def bilinear_sample_gray(gray, xs, ys):
     """グレースケール画像での双線形補間サンプリング"""
@@ -71,19 +92,24 @@ def bilinear_sample_gray(gray, xs, ys):
     
     return wa*Ia + wb*Ib + wc*Ic + wd*Id
 
-def detect_landolt_gaps(img, center_x, center_y, num_circles=20, min_match_ratio=0.8):
+def detect_landolt_gaps(img, center_x, center_y, num_circles=None, min_match_ratio=None):
     """
     画像中心を基準としてランドルト環の穴を検出（ブラックとホワイトの両方を同時検出）
     
     Parameters:
     - img: 入力画像 (BGR)
     - center_x, center_y: 画像中心座標
-    - num_circles: 同心円の数
-    - min_match_ratio: 円周上でのランドルト環色一致率の最小閾値（0.8=80%以上でランドルト環として認識）
+    - num_circles: 同心円の数（Noneの場合は設定値を使用）
+    - min_match_ratio: 円周上でのランドルト環色一致率の最小閾値（Noneの場合は設定値を使用）
     
     Returns:
     - dict: 検出結果（ブラックとホワイトの両方の情報を含む）
     """
+    # 設定値を使用
+    if num_circles is None:
+        num_circles = LANDOLT_NUM_CIRCLES
+    if min_match_ratio is None:
+        min_match_ratio = LANDOLT_MATCH_RATIO_THRESHOLD
     
     # 画像全体の明度を分析
     is_white_background, mean_brightness = analyze_image_brightness(img)
@@ -152,7 +178,7 @@ def detect_landolt_gaps(img, center_x, center_y, num_circles=20, min_match_ratio
         
         for i, hsv_pixel in enumerate(hsv_samples):
             # ブラックランドルト環の判定
-            is_black_landolt = check_is_target_color(hsv_pixel, brightness_threshold=80, is_white_landolt=False)
+            is_black_landolt = check_is_target_color(hsv_pixel, brightness_threshold=BLACK_THRESHOLD, is_white_landolt=False)
             black_matches.append(is_black_landolt)
             
             if not is_black_landolt:
@@ -161,7 +187,7 @@ def detect_landolt_gaps(img, center_x, center_y, num_circles=20, min_match_ratio
                 black_gap_angles.append(angle_deg)
             
             # ホワイトランドルト環の判定
-            is_white_landolt = check_is_target_color(hsv_pixel, brightness_threshold=80, is_white_landolt=True)
+            is_white_landolt = check_is_target_color(hsv_pixel, brightness_threshold=BLACK_THRESHOLD, is_white_landolt=True)
             white_matches.append(is_white_landolt)
             
             if not is_white_landolt:
@@ -195,8 +221,8 @@ def detect_landolt_gaps(img, center_x, center_y, num_circles=20, min_match_ratio
         }
         white_all_circles.append(white_circle_info)
         
-        # ランドルト環色が80%以上の円のみをランドルト環として認識
-        landolt_ratio_threshold = 0.8  # 80%以上の閾値
+        # ランドルト環色が設定値以上の円のみをランドルト環として認識
+        landolt_ratio_threshold = min_match_ratio
         
         # ブラックランドルト環の有効性チェック
         if black_match_ratio >= landolt_ratio_threshold:
@@ -316,17 +342,20 @@ def detect_landolt_gaps(img, center_x, center_y, num_circles=20, min_match_ratio
             'white_continuity_score': white_continuity_score
         }
 
-def detect_gap_intervals(gap_angles, min_gap_size=5.0):
+def detect_gap_intervals(gap_angles, min_gap_size=None):
     """
     ギャップ角度のリストから連続する区間を検出
     
     Parameters:
     - gap_angles: ギャップの角度リスト（度）
-    - min_gap_size: 最小ギャップサイズ（度）
+    - min_gap_size: 最小ギャップサイズ（度）（Noneの場合は設定値を使用）
     
     Returns:
     - intervals: [(start_deg, end_deg), ...] のリスト
     """
+    if min_gap_size is None:
+        min_gap_size = LANDOLT_MIN_GAP_SIZE
+    
     if not gap_angles:
         return []
     
@@ -367,19 +396,24 @@ def angle_to_clock_hour(angle_deg):
     hour = int((hour_angle / 30) + 0.5) % 12
     return hour
 
-def create_hsv_binary_visualization(img, center_x, center_y, num_circles=20, brightness_threshold=80):
+def create_hsv_binary_visualization(img, center_x, center_y, num_circles=None, brightness_threshold=None):
     """
     HSVの分類結果を可視化する画像を作成（黒/白ランドルト環自動判別）
     
     Parameters:
     - img: 入力画像 (BGR)
     - center_x, center_y: 中心座標
-    - num_circles: 同心円の数
-    - brightness_threshold: 明度判定の閾値
+    - num_circles: 同心円の数（Noneの場合は設定値を使用）
+    - brightness_threshold: 明度判定の閾値（Noneの場合は設定値を使用）
     
     Returns:
     - binary_img: 分類結果の画像（ランドルト環色=青、穴色=赤、グレー=サンプルされていない領域）
     """
+    # 設定値を使用
+    if num_circles is None:
+        num_circles = LANDOLT_NUM_CIRCLES
+    if brightness_threshold is None:
+        brightness_threshold = BLACK_THRESHOLD
     # 画像全体の明度を分析して白背景/黒背景を判定
     is_white_background, mean_brightness = analyze_image_brightness(img)
     is_white_landolt = is_white_background  # 白背景なら白いランドルト環
@@ -449,21 +483,28 @@ def create_hsv_binary_visualization(img, center_x, center_y, num_circles=20, bri
     
     return binary_img
 
-def create_hsv_overlay_on_original(img, center_x, center_y, num_circles=20, brightness_threshold=80, alpha=0.6):
+def create_hsv_overlay_on_original(img, center_x, center_y, num_circles=None, brightness_threshold=None, alpha=None):
     """
     元画像にHSVの分類結果を半透明でオーバーレイした画像を作成（ブラックとホワイトの両方を同時表示）
-    80%以上のランドルト環色を持つランドルト環のみを表示し、色分けして表示
+    設定値以上のランドルト環色を持つランドルト環のみを表示し、色分けして表示
     
     Parameters:
     - img: 入力画像 (BGR)
     - center_x, center_y: 中心座標
-    - num_circles: 同心円の数
-    - brightness_threshold: 明度判定の閾値
-    - alpha: オーバーレイの透明度 (0.0-1.0)
+    - num_circles: 同心円の数（Noneの場合は設定値を使用）
+    - brightness_threshold: 明度判定の閾値（Noneの場合は設定値を使用）
+    - alpha: オーバーレイの透明度（Noneの場合は設定値を使用）
     
     Returns:
     - overlay_img: 元画像にHSV分類結果をオーバーレイした画像
     """
+    # 設定値を使用
+    if num_circles is None:
+        num_circles = LANDOLT_NUM_CIRCLES
+    if brightness_threshold is None:
+        brightness_threshold = BLACK_THRESHOLD
+    if alpha is None:
+        alpha = LANDOLT_OVERLAY_ALPHA
     # BGRをRGBに変換してからHSVに変換
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     hsv_img = rgb_to_hsv_opencv(img_rgb)
@@ -529,11 +570,11 @@ def create_hsv_overlay_on_original(img, center_x, center_y, num_circles=20, brig
         black_match_ratio = black_landolt_count / total_count if total_count > 0 else 0.0
         white_match_ratio = white_landolt_count / total_count if total_count > 0 else 0.0
         
-        # 80%以上のランドルト環色がある場合のみランドルト環として認識
-        if black_match_ratio >= 0.8:
+        # 設定値以上のランドルト環色がある場合のみランドルト環として認識
+        if black_match_ratio >= LANDOLT_MATCH_RATIO_THRESHOLD:
             black_valid_radii.append(radius)
         
-        if white_match_ratio >= 0.8:
+        if white_match_ratio >= LANDOLT_MATCH_RATIO_THRESHOLD:
             white_valid_radii.append(radius)
     
     # 連続性を考慮した選択ロジック（可視化用）
@@ -779,10 +820,10 @@ def draw_landolt_analysis(img, analysis_result):
 # ----------------------------------------------------
 # 1. OBS仮想カメラの読み込み設定
 # ----------------------------------------------------
-cap = cv2.VideoCapture(0)  # 仮想カメラのインデックス。環境に合わせて変更してください
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-cap.set(cv2.CAP_PROP_FPS, 30)
+cap = cv2.VideoCapture(CAMERA_INDEX)  # 仮想カメラのインデックス。環境に合わせて変更してください
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
+cap.set(cv2.CAP_PROP_FPS, CAMERA_FPS)
 
 if not cap.isOpened():
     print("エラー: OBS仮想カメラを開けませんでした。")
@@ -909,8 +950,7 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
                 image_save_counter += 1
                 
                 # 2. HSVオーバーレイ画像を作成
-                hsv_overlay_img = create_hsv_overlay_on_original(resized_img, center_x, center_y, 
-                                                               num_circles=20, brightness_threshold=80, alpha=0.6)
+                hsv_overlay_img = create_hsv_overlay_on_original(resized_img, center_x, center_y)
                 
                 # 3. 左上画像（HSVオーバーレイ）を保存
                 leftup_filepath = os.path.join(session_folder, f"{base_filename}_A_leftup_hsv.jpg")
@@ -1162,12 +1202,10 @@ while True:
             center_y = square_size // 2
             
             # ランドルト環の穴検出
-            landolt_result = detect_landolt_gaps(resized_img, center_x, center_y, 
-                                               num_circles=20, min_match_ratio=0.8)
+            landolt_result = detect_landolt_gaps(resized_img, center_x, center_y)
             
-            # HSVオーバーレイ画像を作成（80%以上のランドルト環のみ表示）
-            hsv_overlay_img = create_hsv_overlay_on_original(resized_img, center_x, center_y, 
-                                                           num_circles=20, brightness_threshold=80, alpha=0.6)
+            # HSVオーバーレイ画像を作成（設定値以上のランドルト環のみ表示）
+            hsv_overlay_img = create_hsv_overlay_on_original(resized_img, center_x, center_y)
             
             # HSVオーバーレイ画像をパネルの正しい位置に配置
             panel_rd[start_y:start_y+square_size, start_x:start_x+square_size] = hsv_overlay_img
