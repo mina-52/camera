@@ -228,7 +228,7 @@ def get_qr_content_info(qr_data):
     
     return content_info
 
-def save_qr_detection_images(frame, detected_qr_positions, frame_count, output_frame=None, increment_pause=True):
+def save_qr_detection_images(frame, detected_qr_positions, frame_count, output_frame=None, increment_pause=True, force_save_preview=False):
     """QRコード検出画像を保存する関数（randoruto-wrs2.pyのファイル命名規則に準拠）"""
     global save_counter, image_save_counter, pause_counter, pause_sequence_counter
     
@@ -258,10 +258,15 @@ def save_qr_detection_images(frame, detected_qr_positions, frame_count, output_f
         else:
             print(f"エラー: 左側動画画面の保存に失敗しました - {left_filepath}")
     
-    # 2. 内容プレビュー画面を保存（重複防止）
+    # 2. 内容プレビュー画面を保存（重複防止 + 強制保存オプション）
     if output_frame is not None:
-        # 現在表示中のQRコードの内容プレビューが未保存の場合のみ保存
-        if current_display_qr and current_display_qr not in saved_content_previews:
+        # 現在表示中のQRコードの内容プレビューが未保存の場合、または強制保存の場合のみ保存
+        should_save_preview = (
+            current_display_qr and 
+            (current_display_qr not in saved_content_previews or force_save_preview)
+        )
+        
+        if should_save_preview:
             # 右側の内容プレビュー画面を切り抜き
             right_preview_image = output_frame[0:RIGHT_PREVIEW_HEIGHT, LEFT_VIDEO_WIDTH:WINDOW_WIDTH]
             right_filepath = os.path.join(session_folder, f"{base_filename}_A_content_preview.jpg")
@@ -274,7 +279,10 @@ def save_qr_detection_images(frame, detected_qr_positions, frame_count, output_f
             else:
                 print(f"エラー: 内容プレビュー画面の保存に失敗しました - {right_filepath}")
         else:
-            print("内容プレビュー画面は既に保存済みです")
+            if current_display_qr in saved_content_previews:
+                print("内容プレビュー画面は既に保存済みです")
+            else:
+                print("保存する内容プレビューがありません")
     
 
 def display_qr_history():
@@ -444,6 +452,9 @@ def detect_qr_code(frame):
                         global auto_save_flag
                         auto_save_flag = True
                         saved_qr_codes.add(qr_data)  # 保存済みとして記録
+                        # 内容プレビューも強制的に保存するために、saved_content_previewsから削除
+                        if qr_data in saved_content_previews:
+                            saved_content_previews.remove(qr_data)
                     
                     # 座標情報を取得（pointsから矩形を作成）
                     if points is not None and len(points) > i:
@@ -677,14 +688,14 @@ while True:
     
     # 自動保存（QRコード検出時、pause_counterを増やさない）
     if auto_save_flag and detected_qr_positions:
-        save_qr_detection_images(frame, detected_qr_positions, frame_count, output_frame, increment_pause=False)
+        save_qr_detection_images(frame, detected_qr_positions, frame_count, output_frame, increment_pause=False, force_save_preview=True)
         auto_save_flag = False  # フラグをリセット
         print(f"QRコード検出により自動保存しました (Total: {save_counter} files)")
 
     # キー操作の処理
     key = cv2.waitKey(1) & 0xFF
     if key == ord('s') or key == ord('S'):  # sキー：QRコード検出画像を保存
-        save_qr_detection_images(frame, detected_qr_positions, frame_count, output_frame)
+        save_qr_detection_images(frame, detected_qr_positions, frame_count, output_frame, force_save_preview=True)
         pause_counter += 1
         print(f"QRコード検出画像を保存しました (Total: {save_counter} files)")
     elif key == ord('1'):  # 1キー：履歴を順番に切り替え
@@ -695,6 +706,9 @@ while True:
             # 管理番号部分を除去して元のQRコードデータを取得
             original_qr_data = selected_qr.split('] ', 1)[1] if '] ' in selected_qr else selected_qr
             current_display_qr = original_qr_data
+            # 履歴切り替え時は内容プレビューの保存済みフラグをリセット（再保存可能にする）
+            if original_qr_data in saved_content_previews:
+                saved_content_previews.remove(original_qr_data)
             print(f"履歴切り替え ({current_history_index + 1}/{len(qr_history)}): {selected_qr}")
         else:
             print("履歴がありません")
@@ -711,6 +725,9 @@ while True:
             original_qr_data = selected_qr.split('] ', 1)[1] if '] ' in selected_qr else selected_qr
             current_display_qr = original_qr_data
             current_history_index = selected_index  # インデックスを更新
+            # 直接選択時も内容プレビューの保存済みフラグをリセット（再保存可能にする）
+            if original_qr_data in saved_content_previews:
+                saved_content_previews.remove(original_qr_data)
             print(f"直接選択 ({selected_index + 1}/{len(qr_history)}): {selected_qr}")
     elif key == ord('q') or key == ord('Q'):  # qキー：終了
         break
