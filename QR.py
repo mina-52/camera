@@ -24,6 +24,7 @@ CSV_FILE = "qr_history.csv"
 qr_contents = {}  # QRコードの内容を保存
 current_display_qr = None  # 現在表示中のQRコード
 saved_qr_codes = set()  # 既に保存済みのQRコードを記録
+current_history_index = 0  # 現在の履歴インデックス（1キーで順番切り替え用）
 
 # Mac環境での文字化け対策関数
 def process_text_for_mac(text):
@@ -406,8 +407,9 @@ def detect_qr_code(frame):
                     detected_qr_codes[managed_data] = time.time()
                     
                     # 最新検出のQRコードを自動表示
-                    global current_display_qr
+                    global current_display_qr, current_history_index
                     current_display_qr = qr_data
+                    current_history_index = 0  # 新しいQRコード検出時は履歴インデックスをリセット
                     
                     # 新しいQRコードの場合は自動保存フラグを設定（一度だけ保存）
                     if is_new_qr and qr_data not in saved_qr_codes:
@@ -541,7 +543,9 @@ while True:
     for i, qr_data in enumerate(reversed(qr_history[-MAX_HISTORY:])):
         text_color = (255, 255, 255)
         if qr_data in detected_qr_codes and (current_time - detected_qr_codes[qr_data]) < TIMEOUT:
-            text_color = (255, 0, 0)
+            text_color = (255, 0, 0)  # 赤色：新しく検出されたQRコード
+        elif i == current_history_index:
+            text_color = (0, 255, 255)  # シアン色：現在選択中のQRコード
         
         # 管理番号部分を除去して元のQRコードデータを取得
         original_qr_data = qr_data.split('] ', 1)[1] if '] ' in qr_data else qr_data
@@ -652,14 +656,26 @@ while True:
         save_qr_detection_images(frame, detected_qr_positions, frame_count, output_frame)
         pause_counter += 1
         print(f"QRコード検出画像を保存しました (Total: {save_counter} files)")
-    elif key >= ord('1') and key <= ord('9'):  # 1-9キー：履歴から選択
-        selected_index = key - ord('1')
+    elif key == ord('1'):  # 1キー：履歴を順番に切り替え
+        if qr_history:
+            # 履歴を順番に切り替え（最新から古い順）
+            current_history_index = (current_history_index + 1) % len(qr_history)
+            selected_qr = qr_history[-(current_history_index + 1)]
+            # 管理番号部分を除去して元のQRコードデータを取得
+            original_qr_data = selected_qr.split('] ', 1)[1] if '] ' in selected_qr else selected_qr
+            current_display_qr = original_qr_data
+            print(f"履歴切り替え ({current_history_index + 1}/{len(qr_history)}): {selected_qr}")
+        else:
+            print("履歴がありません")
+    elif key >= ord('2') and key <= ord('9'):  # 2-9キー：履歴から直接選択
+        selected_index = key - ord('1') - 1  # 2キーは1番目、3キーは2番目...
         if 0 <= selected_index < len(qr_history):
             selected_qr = qr_history[-(selected_index+1)]
             # 管理番号部分を除去して元のQRコードデータを取得
             original_qr_data = selected_qr.split('] ', 1)[1] if '] ' in selected_qr else selected_qr
             current_display_qr = original_qr_data
-            print(f"選択されたQRコード: {selected_qr}")
+            current_history_index = selected_index  # インデックスを更新
+            print(f"直接選択 ({selected_index + 1}/{len(qr_history)}): {selected_qr}")
     elif key == ord('o') or key == ord('O'):  # oキー：現在表示中のURLをブラウザで開く
         if current_display_qr and current_display_qr.startswith(('http://', 'https://')):
             open_url_in_browser(current_display_qr)
