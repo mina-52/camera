@@ -246,80 +246,37 @@ def save_qr_detection_images(frame, detected_qr_positions, frame_count, output_f
         pause_counter += 1
         pause_sequence_counter += 1
     
-    # 1. 全体画像（検出されたQRコードに枠を付けた画像）を保存
-    annotated_img = frame.copy()
-    detection_count = len(detected_qr_positions)
-    
-    # 各検出されたQRコードに対して枠とラベルを追加
-    for qr_data, rect in detected_qr_positions.items():
-        # 管理番号部分を除去して元のQRコードデータを取得
-        original_qr_data = qr_data.split('] ', 1)[1] if '] ' in qr_data else qr_data
-        
-        x = int(rect.left * LEFT_VIDEO_WIDTH / cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        y = int(rect.top * VIDEO_AREA_HEIGHT / cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        w = int(rect.width * LEFT_VIDEO_WIDTH / cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        h = int(rect.height * VIDEO_AREA_HEIGHT / cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        
-        # QRコードを囲む枠を描画
-        cv2.rectangle(annotated_img, (x, y), (x + w, y + h), (0, 255, 0), 2)
-        
-        # ラベルを追加
-        cv2.putText(annotated_img, qr_data, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-    
     # ファイル名を生成（randoruto-wrs2.pyの命名規則に準拠）
     current_time = datetime.now()
     time_str = current_time.strftime("%Y%m%d_%H%M%S")
+    detection_count = len(detected_qr_positions)
     base_filename = f"capture_{pause_sequence_counter:06d}_{time_str}_frame{frame_count}_{detection_count}qr_codes"
     
-    # 1. 全体画像（検出結果）を保存
-    whole_filepath = os.path.join(session_folder, f"{base_filename}_R_whole_detection.jpg")
-    success = cv2.imwrite(whole_filepath, annotated_img)
-    if success:
-        print(f"全体画像（検出結果）を保存しました: {base_filename}_R_whole_detection.jpg (検出QRコード数: {detection_count})")
-        save_counter += 1
-        image_save_counter += 1
-    else:
-        print(f"エラー: 全体画像の保存に失敗しました - {whole_filepath}")
-    
-    # 2. 左側動画画像を保存
+    # 1. 左側動画画面を保存
     if output_frame is not None:
-        # 左側の動画画像を切り抜き
+        # 左側の動画画面を切り抜き
         left_video_image = output_frame[0:VIDEO_AREA_HEIGHT, 0:LEFT_VIDEO_WIDTH]
         left_filepath = os.path.join(session_folder, f"{base_filename}_M_left_video.jpg")
         success = cv2.imwrite(left_filepath, left_video_image)
         if success:
-            print(f"左側動画画像を保存しました: {base_filename}_M_left_video.jpg")
+            print(f"左側動画画面を保存しました: {base_filename}_M_left_video.jpg")
             save_counter += 1
             image_save_counter += 1
         else:
-            print(f"エラー: 左側動画画像の保存に失敗しました - {left_filepath}")
+            print(f"エラー: 左側動画画面の保存に失敗しました - {left_filepath}")
     
-    # 3. 右側内容プレビュー画像を保存
+    # 2. 内容プレビュー画面を保存
     if output_frame is not None:
-        # 右側の内容プレビュー画像を切り抜き
+        # 右側の内容プレビュー画面を切り抜き
         right_preview_image = output_frame[0:RIGHT_PREVIEW_HEIGHT, LEFT_VIDEO_WIDTH:WINDOW_WIDTH]
-        right_filepath = os.path.join(session_folder, f"{base_filename}_A_right_preview.jpg")
+        right_filepath = os.path.join(session_folder, f"{base_filename}_A_content_preview.jpg")
         success = cv2.imwrite(right_filepath, right_preview_image)
         if success:
-            print(f"右側内容プレビュー画像を保存しました: {base_filename}_A_right_preview.jpg")
+            print(f"内容プレビュー画面を保存しました: {base_filename}_A_content_preview.jpg")
             save_counter += 1
             image_save_counter += 1
         else:
-            print(f"エラー: 右側内容プレビュー画像の保存に失敗しました - {right_filepath}")
-    
-    # 4. QRコード内容の画像も保存（画像URLの場合）
-    for qr_data, rect in detected_qr_positions.items():
-        original_qr_data = qr_data.split('] ', 1)[1] if '] ' in qr_data else qr_data
-        if original_qr_data in qr_contents:
-            content_info = qr_contents[original_qr_data]
-            if content_info['is_image_url'] and content_info['preview_image'] is not None:
-                # QRコード内容画像を保存
-                content_filename = f"{base_filename}_A_qr_content_{qr_manager[original_qr_data]}.jpg"
-                content_filepath = os.path.join(session_folder, content_filename)
-                cv2.imwrite(content_filepath, content_info['preview_image'])
-                print(f"QRコード内容画像を保存しました: {content_filename}")
-                save_counter += 1
-                image_save_counter += 1
+            print(f"エラー: 内容プレビュー画面の保存に失敗しました - {right_filepath}")
     
 
 def display_qr_history():
