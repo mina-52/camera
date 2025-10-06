@@ -160,4 +160,5 @@ Desktop.ini
 
 # QRコード関連ファイル
 qr_history.csv
+qr_history_*.csv
 qr_detection/
