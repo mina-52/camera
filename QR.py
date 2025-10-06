@@ -277,8 +277,22 @@ def display_qr_history():
         print(df.to_string(index=False))
 
 def get_appropriate_font(size, text=""):
-    """テキストに適したフォントを取得（日本語・英語・記号対応）"""
+    """テキストに適したフォントを取得（Mac対応日本語・英語・記号対応）"""
     try:
+        import sys
+        
+        # Mac環境でのフォントパス設定
+        if sys.platform == 'darwin':  # Mac環境
+            mac_fonts = [
+                "/System/Library/Fonts/Hiragino Sans GB.ttc",  # Mac標準日本語フォント
+                "/System/Library/Fonts/Hiragino Sans.ttc",     # Mac標準日本語フォント
+                "/System/Library/Fonts/Arial Unicode MS.ttf",  # Mac Unicodeフォント
+                "/Library/Fonts/Arial Unicode MS.ttf",         # Mac Unicodeフォント
+                "/System/Library/Fonts/Helvetica.ttc",         # Mac標準フォント
+            ]
+        else:
+            mac_fonts = []
+        
         # 日本語文字が含まれているかチェック（より包括的に）
         has_japanese = any(
             '\u3040' <= char <= '\u309F' or  # ひらがな
@@ -297,7 +311,15 @@ def get_appropriate_font(size, text=""):
         )
         
         if has_japanese or has_special_chars:
-            # 日本語フォントを試す
+            # Mac環境ではMac用フォントを優先
+            if sys.platform == 'darwin':
+                for font_path in mac_fonts:
+                    try:
+                        return ImageFont.truetype(font_path, size)
+                    except:
+                        continue
+            
+            # Windows環境またはMac用フォントが失敗した場合
             try:
                 return ImageFont.truetype(FONT_PATH_JAPANESE, size)
             except:
@@ -318,28 +340,43 @@ def get_appropriate_font(size, text=""):
 def draw_text_with_outline(img, text, position, font, text_color, outline_color=(0, 0, 0)):
     """文字を見やすくするために黒縁を適度に細くし、白字を適度に強調（Mac対応文字化け対策強化）"""
     try:
-        # テキストの文字エンコーディングを確認・修正（Mac対応）
+        # テキストの文字エンコーディングを確認・修正（Mac対応強化）
         if isinstance(text, bytes):
-            try:
-                text = text.decode('utf-8')
-            except UnicodeDecodeError:
+            # Mac環境での文字化け対策
+            encodings_to_try = ['utf-8', 'utf-8-sig', 'shift_jis', 'cp932', 'euc-jp', 'iso-2022-jp', 'latin1']
+            for encoding in encodings_to_try:
                 try:
-                    text = text.decode('shift_jis')
-                except UnicodeDecodeError:
-                    try:
-                        text = text.decode('cp932')  # Windows-31J
-                    except UnicodeDecodeError:
-                        try:
-                            text = text.decode('euc-jp')  # EUC-JP
-                        except UnicodeDecodeError:
-                            text = text.decode('utf-8', errors='replace')
+                    text = text.decode(encoding)
+                    break
+                except (UnicodeDecodeError, LookupError):
+                    continue
+            else:
+                # 全てのエンコーディングが失敗した場合
+                text = text.decode('utf-8', errors='replace')
         
-        # 文字列を安全に処理（Mac/Windows両対応）
+        # 文字列を安全に処理（Mac/Windows両対応強化）
         safe_text = str(text)
-        # 不正な文字を除去
-        safe_text = ''.join(char for char in safe_text if ord(char) < 0x110000)
-        # UTF-8で安全にエンコード/デコード
-        safe_text = safe_text.encode('utf-8', errors='replace').decode('utf-8')
+        
+        # Mac環境での特殊文字処理
+        import sys
+        if sys.platform == 'darwin':  # Mac環境
+            # Mac環境での文字化け対策
+            try:
+                # 文字列を正規化
+                import unicodedata
+                safe_text = unicodedata.normalize('NFC', safe_text)
+            except:
+                pass
+        
+        # 不正な文字を除去（Mac対応）
+        safe_text = ''.join(char for char in safe_text if ord(char) < 0x110000 and ord(char) != 0xFFFD)
+        
+        # UTF-8で安全にエンコード/デコード（Mac対応）
+        try:
+            safe_text = safe_text.encode('utf-8', errors='replace').decode('utf-8')
+        except:
+            # 最終的なフォールバック
+            safe_text = safe_text.encode('ascii', errors='replace').decode('ascii')
         
         pil_img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
         draw = ImageDraw.Draw(pil_img)
@@ -449,7 +486,7 @@ def detect_qr_code(frame):
     return qr_positions
 
 # OBS仮想カメラの読み込み設定
-cap = cv2.VideoCapture(1)  # 仮想カメラのインデックス。環境に合わせて変更してください
+cap = cv2.VideoCapture(1)  # ← カメラ番号を変更する場合はここを編集してください（0: 内蔵カメラ、1: 外付けカメラ、2: OBS仮想カメラなど）
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, LEFT_VIDEO_WIDTH)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, VIDEO_AREA_HEIGHT)
 cap.set(cv2.CAP_PROP_FPS, 30)
