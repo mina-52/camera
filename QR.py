@@ -256,60 +256,109 @@ def find_corresponding_left_image(qr_data, force_reload=False):
     """現在のQRコードに対応する左上画像（左側動画）を検索して読み込む"""
     global image_cache
     
+    print(f"画像検索開始: qr_data='{qr_data}', force_reload={force_reload}")
+    
     if not qr_data or not os.path.exists(session_folder):
+        print("QRデータまたはセッションフォルダーが存在しません")
         return None
     
     # キャッシュをチェック（強制再読み込みでない場合）
     if not force_reload and qr_data in image_cache:
+        print("キャッシュから画像を取得")
         return image_cache[qr_data]
     
     try:
         # QRコードの管理番号を取得
         qr_number = qr_manager.get(qr_data, None)
+        print(f"QR番号: {qr_number}")
         if qr_number is None:
+            print("QR番号が見つかりません")
             return None
         
         # セッションフォルダー内のファイルを検索
-        for filename in os.listdir(session_folder):
-            if "_M_left_video.jpg" in filename:
-                # ファイル名からQR番号を推測（ファイル名に含まれる可能性）
-                # より確実な方法として、CSVファイルの情報を使用
-                try:
-                    # CSVファイルから該当するQRコードの検出時刻を取得
-                    if os.path.exists(CSV_FILE):
-                        with open(CSV_FILE, 'r', encoding='utf-8') as file:
-                            reader = csv.reader(file)
-                            next(reader, None)  # ヘッダーをスキップ
-                            
-                            for row in reader:
-                                if len(row) >= 3 and row[0] == str(qr_number):
-                                    # 該当するQRコードの検出時刻を取得
-                                    detection_time = row[2]
-                                    # ファイル名に時刻が含まれているかチェック
-                                    if detection_time.replace('-', '').replace(' ', '').replace(':', '') in filename:
-                                        # 対応する画像ファイルを読み込み
-                                        filepath = os.path.join(session_folder, filename)
-                                        image = cv2.imread(filepath)
-                                        if image is not None:
-                                            # キャッシュに保存
-                                            image_cache[qr_data] = image
-                                            return image
-                except Exception as e:
-                    print(f"CSVファイル読み込みエラー: {e}")
-                    continue
+        left_video_files = [f for f in os.listdir(session_folder) if "_M_left_video.jpg" in f]
+        print(f"見つかった左側動画ファイル数: {len(left_video_files)}")
+        
+        # まず、ファイル名から直接QR番号を推測する方法を試す
+        for filename in left_video_files:
+            print(f"検索中のファイル: {filename}")
+            
+            # ファイル名からQR番号を直接推測（ファイル名パターン: capture_XXXXXX_YYYYMMDD_HHMMSS_frameXXX_Xqr_codes_M_left_video.jpg）
+            # pause_sequence_counterがQR番号と対応している可能性
+            try:
+                # ファイル名からpause_sequence_counterを抽出
+                parts = filename.split('_')
+                if len(parts) >= 2:
+                    sequence_str = parts[1]  # XXXXXXの部分
+                    try:
+                        sequence_num = int(sequence_str)
+                        print(f"ファイルのシーケンス番号: {sequence_num}")
+                        # QR番号とシーケンス番号の対応をチェック
+                        # 実際の対応関係は複雑だが、近い値を試す
+                        if sequence_num == qr_number:
+                            print(f"シーケンス番号が一致: {filename}")
+                            filepath = os.path.join(session_folder, filename)
+                            image = cv2.imread(filepath)
+                            if image is not None:
+                                print(f"画像読み込み成功（シーケンス番号一致）: {filename}")
+                                image_cache[qr_data] = image
+                                return image
+                    except ValueError:
+                        pass
+            except Exception as e:
+                print(f"シーケンス番号抽出エラー: {e}")
+            
+            # CSVファイルから該当するQRコードの検出時刻を取得
+            try:
+                # CSVファイルから該当するQRコードの検出時刻を取得
+                if os.path.exists(CSV_FILE):
+                    with open(CSV_FILE, 'r', encoding='utf-8') as file:
+                        reader = csv.reader(file)
+                        next(reader, None)  # ヘッダーをスキップ
+                        
+                        for row in reader:
+                            if len(row) >= 3 and row[0] == str(qr_number):
+                                # 該当するQRコードの検出時刻を取得
+                                detection_time = row[2]
+                                print(f"CSV検出時刻: {detection_time}")
+                                # ファイル名に時刻が含まれているかチェック
+                                time_str = detection_time.replace('-', '').replace(' ', '').replace(':', '')
+                                print(f"検索時刻文字列: {time_str}")
+                                if time_str in filename:
+                                    print(f"マッチしたファイル: {filename}")
+                                    # 対応する画像ファイルを読み込み
+                                    filepath = os.path.join(session_folder, filename)
+                                    image = cv2.imread(filepath)
+                                    if image is not None:
+                                        print(f"画像読み込み成功: {filename}")
+                                        # キャッシュに保存
+                                        image_cache[qr_data] = image
+                                        return image
+                                    else:
+                                        print(f"画像読み込み失敗: {filename}")
+                                else:
+                                    print(f"時刻マッチなし: {filename}")
+            except Exception as e:
+                print(f"CSVファイル読み込みエラー: {e}")
+                continue
         
         # 見つからない場合は、最新の左側動画画像を返す
-        left_video_files = [f for f in os.listdir(session_folder) if "_M_left_video.jpg" in f]
+        print("CSVマッチなし、最新ファイルを使用")
         if left_video_files:
             # 最新のファイルを選択
             latest_file = sorted(left_video_files)[-1]
+            print(f"最新ファイル: {latest_file}")
             filepath = os.path.join(session_folder, latest_file)
             image = cv2.imread(filepath)
             if image is not None:
+                print(f"最新ファイル読み込み成功: {latest_file}")
                 # キャッシュに保存
                 image_cache[qr_data] = image
                 return image
+            else:
+                print(f"最新ファイル読み込み失敗: {latest_file}")
         
+        print("画像が見つかりませんでした")
         return None
     except Exception as e:
         print(f"対応画像検索エラー: {e}")
