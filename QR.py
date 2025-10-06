@@ -667,8 +667,13 @@ while True:
             print(f"履歴切り替え ({current_history_index + 1}/{len(qr_history)}): {selected_qr}")
         else:
             print("履歴がありません")
-    elif key >= ord('2') and key <= ord('9'):  # 2-9キー：履歴から直接選択
-        selected_index = key - ord('1') - 1  # 2キーは1番目、3キーは2番目...
+    elif key == ord('2'):  # 2キー：現在表示中のURLをブラウザで開く
+        if current_display_qr and current_display_qr.startswith(('http://', 'https://')):
+            open_url_in_browser(current_display_qr)
+        else:
+            print("現在表示中のQRコードはURLではありません。")
+    elif key >= ord('3') and key <= ord('9'):  # 3-9キー：履歴から直接選択
+        selected_index = key - ord('3')  # 3キーは0番目、4キーは1番目...
         if 0 <= selected_index < len(qr_history):
             selected_qr = qr_history[-(selected_index+1)]
             # 管理番号部分を除去して元のQRコードデータを取得
@@ -676,11 +681,6 @@ while True:
             current_display_qr = original_qr_data
             current_history_index = selected_index  # インデックスを更新
             print(f"直接選択 ({selected_index + 1}/{len(qr_history)}): {selected_qr}")
-    elif key == ord('o') or key == ord('O'):  # oキー：現在表示中のURLをブラウザで開く
-        if current_display_qr and current_display_qr.startswith(('http://', 'https://')):
-            open_url_in_browser(current_display_qr)
-        else:
-            print("現在表示中のQRコードはURLではありません。")
     elif key == ord('q') or key == ord('Q'):  # qキー：終了
         break
 
