@@ -535,15 +535,21 @@ while True:
     output_frame = draw_text_with_outline(output_frame, f"Image Saves: {image_save_counter}", (20, counter_y), counter_font, (255, 255, 255))
     counter_y += 50
     
-    # QRコード履歴を表示
+    # QRコード履歴を表示（最初の7文字のみ）
     y_offset = counter_y
     for i, qr_data in enumerate(reversed(qr_history[-MAX_HISTORY:])):
         text_color = (255, 255, 255)
         if qr_data in detected_qr_codes and (current_time - detected_qr_codes[qr_data]) < TIMEOUT:
             text_color = (255, 0, 0)
         
+        # 管理番号部分を除去して元のQRコードデータを取得
+        original_qr_data = qr_data.split('] ', 1)[1] if '] ' in qr_data else qr_data
+        
+        # 最初の7文字のみを表示
+        short_content = original_qr_data[:7] + "..." if len(original_qr_data) > 7 else original_qr_data
+        
         # 番号付きで表示
-        display_text = f"{i+1}. {qr_data}"
+        display_text = f"{i+1}. {short_content}"
         history_font = get_appropriate_font(HISTORY_FONT_SIZE, display_text)
         output_frame = draw_text_with_outline(output_frame, display_text, (20, y_offset), history_font, text_color)
         y_offset += HISTORY_ENTRY_SPACING
