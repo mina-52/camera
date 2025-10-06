@@ -23,6 +23,7 @@ CSV_FILE = "qr_history.csv"
 # QRコード内容表示用
 qr_contents = {}  # QRコードの内容を保存
 current_display_qr = None  # 現在表示中のQRコード
+saved_qr_codes = set()  # 既に保存済みのQRコードを記録
 
 # Mac環境での文字化け対策関数
 def process_text_for_mac(text):
@@ -481,12 +482,13 @@ def detect_qr_code(frame):
                     global current_display_qr
                     current_display_qr = qr_data
                     
-                    # 新しいQRコードの場合は自動保存フラグを設定
-                    if is_new_qr:
+                    # 新しいQRコードの場合は自動保存フラグを設定（一度だけ保存）
+                    if is_new_qr and qr_data not in saved_qr_codes:
                         # 自動保存フラグを設定
                         global save_preview_flag, auto_save_flag
                         save_preview_flag = True
                         auto_save_flag = True
+                        saved_qr_codes.add(qr_data)  # 保存済みとして記録
                     
                     # 座標情報を取得（pointsから矩形を作成）
                     if points is not None and len(points) > i:
