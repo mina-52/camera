@@ -798,6 +798,7 @@ while True:
     # キー操作の処理
     key = cv2.waitKey(1) & 0xFF
     if key == ord('1'):  # 1キー：履歴を順番に切り替え
+        print(f"1キーが押されました。")
         if qr_history:
             # 履歴を順番に切り替え（最新から古い順）
             current_history_index = (current_history_index + 1) % len(qr_history)
@@ -811,14 +812,18 @@ while True:
         else:
             print("履歴がありません")
     elif key == ord('2'):  # 2キー：内容プレビューを手動保存
-        if current_display_qr and detected_qr_positions:
+        print(f"2キーが押されました。current_display_qr={current_display_qr}")
+        if current_display_qr:
             print(f"2キー: 内容プレビューを手動保存します - {current_display_qr}")
-            save_qr_detection_images(frame, detected_qr_positions, frame_count, output_frame, increment_pause=True, force_save_preview=True, save_preview=True)
+            # 履歴切り替え後でも保存できるように、ダミーのdetected_qr_positionsを作成
+            dummy_positions = {f"[{qr_manager.get(current_display_qr, '?')}] {current_display_qr}": None}
+            save_qr_detection_images(frame, dummy_positions, frame_count, output_frame, increment_pause=True, force_save_preview=True, save_preview=True)
             pause_counter += 1
             print(f"内容プレビューを保存しました (Total: {save_counter} files)")
         else:
             print("保存するQRコードがありません。")
     elif key == 13:  # エンターキー：現在表示中のURLをブラウザで開く
+        print(f"エンターキーが押されました。")
         if current_display_qr and current_display_qr.startswith(('http://', 'https://')):
             open_url_in_browser(current_display_qr)
         else:
@@ -835,7 +840,10 @@ while True:
             # CSVベースの管理では、強制保存オプションを使用して再保存を可能にする
             print(f"直接選択 ({selected_index + 1}/{len(qr_history)}): {selected_qr}")
     elif key == ord('q') or key == ord('Q'):  # qキー：終了
+        print(f"qキーが押されました。プログラムを終了します。")
         break
+    elif key != 255:  # キーが押されたが、認識されていない場合
+        print(f"未認識のキーが押されました: {key} (ASCII: {chr(key) if key < 128 else 'non-ASCII'})")
 
 cap.release()
 cv2.destroyAllWindows()
