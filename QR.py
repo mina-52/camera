@@ -173,22 +173,30 @@ def is_qr_content_saved_in_csv(qr_data):
 def is_qr_preview_saved_in_csv(qr_data):
     """CSVファイルでQRコードの内容プレビューが既に保存されているかチェック"""
     if not os.path.exists(CSV_FILE):
+        print(f"CSVファイルが存在しません: {CSV_FILE}")
         return False
     
     try:
+        processed_qr_data = process_text_for_mac(qr_data)
+        print(f"プレビュー保存チェック: 検索対象='{processed_qr_data}'")
+        
         with open(CSV_FILE, 'r', encoding='utf-8') as file:
             reader = csv.reader(file)
             # ヘッダー行をスキップ
             next(reader, None)
             
-            processed_qr_data = process_text_for_mac(qr_data)
-            for row in reader:
+            for row_num, row in enumerate(reader, start=2):  # 行番号（ヘッダーを除く）
                 if len(row) >= 4:  # プレビュー保存済み列も含む
                     csv_content = row[1]  # QRコード内容の列
                     preview_saved = row[3] if len(row) > 3 else 'No'  # プレビュー保存済み列
                     # 文字列の完全一致でチェック
                     if csv_content.strip() == processed_qr_data.strip() and preview_saved == 'Yes':
+                        print(f"  行{row_num}: プレビュー保存済みを発見 - '{csv_content}' (プレビュー保存状態: {preview_saved})")
                         return True
+                    elif csv_content.strip() == processed_qr_data.strip():
+                        print(f"  行{row_num}: QRコード内容は一致するがプレビュー未保存 - '{csv_content}' (プレビュー保存状態: {preview_saved})")
+        
+        print(f"  プレビュー保存済みのQRコードが見つかりませんでした")
         return False
     except Exception as e:
         print(f"プレビュー保存チェックエラー: {e}")
@@ -197,6 +205,7 @@ def is_qr_preview_saved_in_csv(qr_data):
 def update_preview_saved_status(qr_data, saved=True):
     """CSVファイルでQRコードのプレビュー保存状態を更新"""
     if not os.path.exists(CSV_FILE):
+        print(f"CSVファイルが存在しません: {CSV_FILE}")
         return False
     
     try:
@@ -208,6 +217,8 @@ def update_preview_saved_status(qr_data, saved=True):
         
         # 対象のQRコードの行を見つけて更新
         processed_qr_data = process_text_for_mac(qr_data)
+        print(f"プレビュー保存状態更新: 対象='{processed_qr_data}', saved={saved}")
+        
         updated = False
         for i, row in enumerate(rows):
             if i == 0:  # ヘッダー行はスキップ
@@ -216,8 +227,10 @@ def update_preview_saved_status(qr_data, saved=True):
                 # プレビュー保存済み列を更新
                 while len(row) < 4:
                     row.append('No')
+                old_status = row[3] if len(row) > 3 else 'No'
                 row[3] = 'Yes' if saved else 'No'
                 updated = True
+                print(f"  行{i+1}: プレビュー保存状態を更新 '{old_status}' → '{row[3]}'")
                 break
         
         # 更新された内容をCSVファイルに書き戻し
@@ -225,8 +238,11 @@ def update_preview_saved_status(qr_data, saved=True):
             with open(CSV_FILE, 'w', newline='', encoding='utf-8') as file:
                 writer = csv.writer(file)
                 writer.writerows(rows)
+            print(f"  CSVファイルを更新しました")
             return True
-        return False
+        else:
+            print(f"  更新対象のQRコードが見つかりませんでした")
+            return False
     except Exception as e:
         print(f"プレビュー保存状態更新エラー: {e}")
         return False
@@ -349,7 +365,10 @@ def save_qr_detection_images(frame, detected_qr_positions, frame_count, output_f
             (not preview_already_saved or force_save_preview)
         )
         
-        print(f"プレビュー保存判定: current_display_qr={current_display_qr}, preview_already_saved={preview_already_saved}, force_save_preview={force_save_preview}, should_save_preview={should_save_preview}")
+        print(f"プレビュー保存判定: current_display_qr={current_display_qr}")
+        print(f"  - preview_already_saved={preview_already_saved}")
+        print(f"  - force_save_preview={force_save_preview}")
+        print(f"  - should_save_preview={should_save_preview}")
         
         if should_save_preview:
             # 右側の内容プレビュー画面を切り抜き
@@ -771,7 +790,7 @@ while True:
     # 自動保存（QRコード検出時、pause_counterを増やさない）
     if auto_save_flag and detected_qr_positions:
         print(f"自動保存を実行します: current_display_qr={current_display_qr}")
-        save_qr_detection_images(frame, detected_qr_positions, frame_count, output_frame, increment_pause=False, force_save_preview=True)
+        save_qr_detection_images(frame, detected_qr_positions, frame_count, output_frame, increment_pause=False, force_save_preview=False)
         auto_save_flag = False  # フラグをリセット
         print(f"QRコード検出により自動保存しました (Total: {save_counter} files)")
 
