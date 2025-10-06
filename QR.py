@@ -123,46 +123,16 @@ CONTENT_FONT_SIZE = 24  # QRコード内容表示の文字サイズ（右側エ�
 CONTENT_LINE_SPACING = 50  # 内容表示の行間隔（重複完全防止）
 
 def reset_csv_counter():
-    """CSVファイルの通し番号を起動回数に応じて設定する（1.1, 2.1, 3.1...）"""
+    """CSVファイルの通し番号を1から開始する（以前の情報は使用しない）"""
     global qr_counter
     qr_counter = 1
-    
-    # 既存のCSVファイルから起動回数を読み取る
-    if os.path.exists(CSV_FILE):
-        try:
-            with open(CSV_FILE, mode='r', encoding='utf-8') as file:
-                reader = csv.reader(file)
-                max_session = 0
-                for row in reader:
-                    if len(row) >= 1 and '.' in str(row[0]):
-                        # 1.1, 2.1, 3.1 のような形式を解析
-                        try:
-                            session_num = int(str(row[0]).split('.')[0])
-                            if session_num > max_session:
-                                max_session = session_num
-                        except ValueError:
-                            continue
-                
-                # 次の起動回数から開始
-                next_session = max_session + 1
-                qr_counter = next_session
-                print(f"起動回数: {next_session}回目, 開始番号: {qr_counter}.1")
-        except Exception as e:
-            print(f"CSVファイル読み込みエラー: {e}, 1回目として開始します")
-            qr_counter = 1
-            print("起動回数: 1回目, 開始番号: 1.1")
-    else:
-        # CSVファイルが存在しない場合は1回目として開始
-        qr_counter = 1
-        print("起動回数: 1回目, 開始番号: 1.1")
+    print("通し番号を1から開始します")
 
 def save_qr_to_csv(qr_number, qr_data, timestamp):
-    """QRコードのデータをCSVファイルに保存する（起動回数.連番形式）"""
+    """QRコードのデータをCSVファイルに保存する"""
     with open(CSV_FILE, mode='a', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
-        # 起動回数.連番の形式で保存
-        formatted_number = f"{qr_counter}.{qr_number}"
-        writer.writerow([formatted_number, qr_data, timestamp])
+        writer.writerow([qr_number, qr_data, timestamp])
 
 def open_url_in_browser(url):
     """URLをブラウザで開く"""
