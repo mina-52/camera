@@ -315,8 +315,8 @@ def get_qr_content_info(qr_data):
                 print(f"画像読み込みエラー: {e}")
     
     return content_info
-
-def save_qr_detection_images(frame, detected_qr_positions, frame_count, output_frame=None, increment_pause=True, force_save_preview=False, save_preview=True):
+#s
+def save_qr_detection_images(frame, detected_qr_positions, frame_count, output_frame=None, increment_pause=True, force_save_preview=False, save_preview=True, save_left_video=True):
     """QRコード検出画像を保存する関数（randoruto-wrs2.pyのファイル命名規則に準拠）"""
     global save_counter, image_save_counter, pause_counter, pause_sequence_counter
     
@@ -333,8 +333,8 @@ def save_qr_detection_images(frame, detected_qr_positions, frame_count, output_f
     detection_count = len(detected_qr_positions)
     base_filename = f"capture_{pause_sequence_counter:06d}_{time_str}_frame{frame_count}_{detection_count}qr_codes"
     
-    # 1. 左側動画画面を保存
-    if output_frame is not None:
+    # 1. 左側動画画面を保存（save_left_videoパラメータで制御）
+    if output_frame is not None and save_left_video:
         # 左側の動画画面を切り抜き
         left_video_image = output_frame[0:VIDEO_AREA_HEIGHT, 0:LEFT_VIDEO_WIDTH]
         left_filepath = os.path.join(session_folder, f"{base_filename}_M_left_video.jpg")
@@ -345,6 +345,8 @@ def save_qr_detection_images(frame, detected_qr_positions, frame_count, output_f
             image_save_counter += 1
         else:
             print(f"エラー: 左側動画画面の保存に失敗しました - {left_filepath}")
+    elif not save_left_video:
+        print("左側動画画面の保存は無効化されています")
     
     # 2. 内容プレビュー画面を保存（save_previewパラメータで制御）
     if output_frame is not None and save_preview:
@@ -791,7 +793,7 @@ while True:
     # 自動保存（QRコード検出時、上の画像のみ保存、プレビューは手動保存）
     if auto_save_flag and detected_qr_positions:
         print(f"自動保存を実行します")
-        save_qr_detection_images(frame, detected_qr_positions, frame_count, output_frame, increment_pause=False, force_save_preview=False, save_preview=False)
+        save_qr_detection_images(frame, detected_qr_positions, frame_count, output_frame, increment_pause=False, force_save_preview=False, save_preview=False, save_left_video=True)
         auto_save_flag = False  # フラグをリセット
         print(f"QRコード検出により自動保存しました (上の画像のみ) (Total: {save_counter} files)")
 
@@ -813,14 +815,27 @@ while True:
             print("履歴がありません")
     elif key == ord('2'):  # 2キー：内容プレビューを手動保存
         print(f"2キーが押されました。current_display_qr={current_display_qr}")
+        
+        # 現在表示中のQRコードが存在するかチェック
         if current_display_qr:
             print(f"2キー: 内容プレビューを手動保存します - {current_display_qr}")
+            
             # 履歴切り替え後でも保存できるように、ダミーのdetected_qr_positionsを作成
+            # 新しいQRコード検出時以外はdetected_qr_positionsが空のため、ダミーデータを使用
             dummy_positions = {f"[{qr_manager.get(current_display_qr, '?')}] {current_display_qr}": None}
-            save_qr_detection_images(frame, dummy_positions, frame_count, output_frame, increment_pause=True, force_save_preview=True, save_preview=True)
+            
+            # 内容プレビューのみを保存（左側動画は保存しない）
+            # save_left_video=False で左側動画の保存を無効化
+            # force_save_preview=True で重複チェックを無視して強制保存
+            save_qr_detection_images(frame, dummy_positions, frame_count, output_frame, 
+                                   increment_pause=True, force_save_preview=True, 
+                                   save_preview=True, save_left_video=False)
+            
+            # 手動保存カウンターを増加
             pause_counter += 1
             print(f"内容プレビューを保存しました (Total: {save_counter} files)")
         else:
+            # 表示中のQRコードがない場合は保存しない
             print("保存するQRコードがありません。")
     elif key == 13:  # エンターキー：現在表示中のURLをブラウザで開く
         print(f"エンターキーが押されました。")
