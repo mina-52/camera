@@ -64,8 +64,8 @@ VIDEO_AREA_HEIGHT = LEFT_VIDEO_HEIGHT - HISTORY_AREA_HEIGHT  # 残りの高さ�
 # 見やすさ向上のためのパラメータ調整
 HISTORY_FONT_SIZE = 14  # 文字サイズ
 HISTORY_ENTRY_SPACING = 40  # 履歴間の間隔
-CONTENT_FONT_SIZE = 16  # QRコード内容表示の文字サイズ（大きく）
-CONTENT_LINE_SPACING = 35  # 内容表示の行間隔（重複防止）
+CONTENT_FONT_SIZE = 24  # QRコード内容表示の文字サイズ（右側エリアを活用してさらに大きく）
+CONTENT_LINE_SPACING = 50  # 内容表示の行間隔（重複完全防止）
 
 def save_qr_to_csv(qr_number, qr_data, timestamp):
     """QRコードのデータをCSVファイルに保存する"""
@@ -316,9 +316,9 @@ def get_appropriate_font(size, text=""):
         return ImageFont.load_default()
 
 def draw_text_with_outline(img, text, position, font, text_color, outline_color=(0, 0, 0)):
-    """文字を見やすくするために黒縁を適度に細くし、白字を適度に強調（文字化け対策強化）"""
+    """文字を見やすくするために黒縁を適度に細くし、白字を適度に強調（Mac対応文字化け対策強化）"""
     try:
-        # テキストの文字エンコーディングを確認・修正
+        # テキストの文字エンコーディングを確認・修正（Mac対応）
         if isinstance(text, bytes):
             try:
                 text = text.decode('utf-8')
@@ -326,10 +326,20 @@ def draw_text_with_outline(img, text, position, font, text_color, outline_color=
                 try:
                     text = text.decode('shift_jis')
                 except UnicodeDecodeError:
-                    text = text.decode('utf-8', errors='replace')
+                    try:
+                        text = text.decode('cp932')  # Windows-31J
+                    except UnicodeDecodeError:
+                        try:
+                            text = text.decode('euc-jp')  # EUC-JP
+                        except UnicodeDecodeError:
+                            text = text.decode('utf-8', errors='replace')
         
-        # 文字列を安全に処理
-        safe_text = str(text).encode('utf-8', errors='replace').decode('utf-8')
+        # 文字列を安全に処理（Mac/Windows両対応）
+        safe_text = str(text)
+        # 不正な文字を除去
+        safe_text = ''.join(char for char in safe_text if ord(char) < 0x110000)
+        # UTF-8で安全にエンコード/デコード
+        safe_text = safe_text.encode('utf-8', errors='replace').decode('utf-8')
         
         pil_img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
         draw = ImageDraw.Draw(pil_img)
@@ -551,154 +561,70 @@ while True:
         content_info = qr_contents[current_display_qr]
         content_y = 20
         
-        # タイトル（大きく）
-        title_text = f"QR#{qr_manager.get(current_display_qr, '?')}: {content_info['type']}"
-        title_font = get_appropriate_font(CONTENT_FONT_SIZE + 4, title_text)
+        # 簡潔なタイトルのみ表示
+        title_text = f"QR#{qr_manager.get(current_display_qr, '?')}"
+        title_font = get_appropriate_font(CONTENT_FONT_SIZE + 2, title_text)
         output_frame = draw_text_with_outline(output_frame, title_text, (LEFT_VIDEO_WIDTH + 20, content_y), title_font, (255, 255, 255))
-        content_y += CONTENT_LINE_SPACING + 10
+        content_y += CONTENT_LINE_SPACING + 15
         
-        # CSV情報を表示（大きく）
-        if content_info.get('csv_info'):
-            csv_info = content_info['csv_info']
-            csv_text = f"CSV番号: {csv_info['number']}"
-            csv_font = get_appropriate_font(CONTENT_FONT_SIZE, csv_text)
-            output_frame = draw_text_with_outline(output_frame, csv_text, (LEFT_VIDEO_WIDTH + 20, content_y), csv_font, (0, 255, 255))
-            content_y += CONTENT_LINE_SPACING
-            
-            timestamp_text = f"記録時刻: {csv_info['timestamp']}"
-            timestamp_font = get_appropriate_font(CONTENT_FONT_SIZE, timestamp_text)
-            output_frame = draw_text_with_outline(output_frame, timestamp_text, (LEFT_VIDEO_WIDTH + 20, content_y), timestamp_font, (0, 255, 255))
-            content_y += CONTENT_LINE_SPACING
-            
-            # QRコードから読み取った内容であることを表示
-            qr_source_text = "※QRコードから読み取った内容"
-            qr_source_font = get_appropriate_font(CONTENT_FONT_SIZE - 2, qr_source_text)
-            output_frame = draw_text_with_outline(output_frame, qr_source_text, (LEFT_VIDEO_WIDTH + 20, content_y), qr_source_font, (255, 255, 0))
-            content_y += CONTENT_LINE_SPACING + 10
-        
-        # URLかどうか（大きく）
-        if content_info['is_url']:
-            url_text = "URL: はい"
-            url_font = get_appropriate_font(CONTENT_FONT_SIZE, url_text)
-            output_frame = draw_text_with_outline(output_frame, url_text, (LEFT_VIDEO_WIDTH + 20, content_y), url_font, (0, 255, 0))
-            content_y += CONTENT_LINE_SPACING
-        
-        # 画像URLかどうか（大きく）
-        if content_info['is_image_url']:
-            img_url_text = "画像URL: はい"
-            img_font = get_appropriate_font(CONTENT_FONT_SIZE, img_url_text)
-            output_frame = draw_text_with_outline(output_frame, img_url_text, (LEFT_VIDEO_WIDTH + 20, content_y), img_font, (255, 165, 0))
-            content_y += CONTENT_LINE_SPACING
-        
-        # 内容テキスト（改行対応、大きなエリアに合わせて、大きく）
+        # 内容テキスト（右側全体を活用してフル表示、vCard/JSON対応）
         content_text = content_info['content']
-        max_chars_per_line = 35  # 大きなフォントに合わせて少し短く
-        lines = [content_text[i:i+max_chars_per_line] for i in range(0, len(content_text), max_chars_per_line)]
         
-        # テキスト表示エリアの制限（大きなエリアに合わせて）
-        max_lines = 6  # 大きなフォントに合わせて行数を減らす
-        for line in lines[:max_lines]:
-            line_font = get_appropriate_font(CONTENT_FONT_SIZE, line)
-            output_frame = draw_text_with_outline(output_frame, line, (LEFT_VIDEO_WIDTH + 20, content_y), line_font, (255, 255, 255))
-            content_y += CONTENT_LINE_SPACING
-        
-        # テキストが長い場合は省略表示
-        if len(lines) > max_lines:
-            remaining_lines = len(lines) - max_lines
-            remaining_text = f"...他{remaining_lines}行"
-            remaining_font = get_appropriate_font(CONTENT_FONT_SIZE, remaining_text)
-            output_frame = draw_text_with_outline(output_frame, remaining_text, (LEFT_VIDEO_WIDTH + 20, content_y), remaining_font, (200, 200, 200))
-            content_y += CONTENT_LINE_SPACING
-        
-        # プレビューエリアの座標を設定
-        preview_x = LEFT_VIDEO_WIDTH + 20
-        preview_y = content_y + 20
-        
-        # 右側プレビューエリアで画像を表示（大きなエリアに合わせて）
-        if content_info['preview_image'] is not None:
-            preview_img = content_info['preview_image']
-            preview_height, preview_width = preview_img.shape[:2]
-            max_preview_size = min(RIGHT_PREVIEW_WIDTH - 100, RIGHT_PREVIEW_HEIGHT - 200)  # 大きなエリアに合わせて
-            
-            if preview_height > max_preview_size or preview_width > max_preview_size:
-                scale = max_preview_size / max(preview_height, preview_width)
-                new_width = int(preview_width * scale)
-                new_height = int(preview_height * scale)
-                preview_img = cv2.resize(preview_img, (new_width, new_height))
-            
-            if preview_x + preview_img.shape[1] <= WINDOW_WIDTH and preview_y + preview_img.shape[0] <= WINDOW_HEIGHT:
-                output_frame[preview_y:preview_y + preview_img.shape[0], preview_x:preview_x + preview_img.shape[1]] = preview_img
-        
-        if content_info['is_image_url'] and content_info['preview_image'] is not None:
-            # 画像URLの場合は画像プレビュー
-            preview_title_font = get_appropriate_font(CONTENT_FONT_SIZE, "画像プレビュー")
-            output_frame = draw_text_with_outline(output_frame, "画像プレビュー:", (preview_x, preview_y), preview_title_font, (255, 255, 255))
-            preview_y += CONTENT_LINE_SPACING
-            
-            # 画像プレビューの処理
-            preview_img = content_info['preview_image']
-            h, w = preview_img.shape[:2]
-            
-            # プレビューエリアのサイズに合わせて画像をリサイズ
-            max_img_height = RIGHT_PREVIEW_HEIGHT - 200
-            max_img_width = RIGHT_PREVIEW_WIDTH - 100
-            
-            if h > max_img_height:
-                scale = max_img_height / h
-                new_h = int(h * scale)
-                new_w = int(w * scale)
-                preview_img = cv2.resize(preview_img, (new_w, new_h))
-                h, w = new_h, new_w
-            
-            if w > max_img_width:
-                scale = max_img_width / w
-                new_h = int(h * scale)
-                new_w = int(w * scale)
-                preview_img = cv2.resize(preview_img, (new_w, new_h))
-                h, w = new_h, new_w
-            
-            # プレビューエリアに画像を配置
-            img_start_y = preview_y + 30
-            if img_start_y + h < WINDOW_HEIGHT and preview_x + w < WINDOW_WIDTH:
-                output_frame[img_start_y:img_start_y+h, preview_x:preview_x+w] = preview_img
-                cv2.rectangle(output_frame, (preview_x, img_start_y), (preview_x + w, img_start_y + h), (255, 255, 255), 2)
+        # vCardやJSONの場合は改行を考慮した処理
+        if content_text.startswith('BEGIN:VCARD') or content_text.startswith('{') or content_text.startswith('['):
+            # vCardやJSONの場合は既存の改行を保持
+            lines = content_text.split('\n')
+            # 長すぎる行は分割
+            processed_lines = []
+            for line in lines:
+                if len(line) > 40:
+                    # 長い行を分割
+                    for i in range(0, len(line), 40):
+                        processed_lines.append(line[i:i+40])
+                else:
+                    processed_lines.append(line)
+            lines = processed_lines
         else:
-            # テキスト内容の場合はテキストプレビュー
-            content_preview_font = get_appropriate_font(CONTENT_FONT_SIZE, "内容プレビュー")
-            output_frame = draw_text_with_outline(output_frame, "内容プレビュー:", (preview_x, preview_y), content_preview_font, (255, 255, 255))
-            preview_y += CONTENT_LINE_SPACING
-            
-            # プレビューエリアにテキスト内容を表示
-            preview_lines = [content_text[i:i+25] for i in range(0, len(content_text), 25)]  # 大きなフォントに合わせて調整
-            max_preview_lines = 5  # 大きなフォントに合わせて行数を減らす
-            
-            for i, line in enumerate(preview_lines[:max_preview_lines]):
-                if preview_y + i * CONTENT_LINE_SPACING < WINDOW_HEIGHT - 20:
-                    # テキストの色を内容タイプに応じて変更
-                    text_color = (200, 255, 200)  # 通常テキスト
-                    if content_info['is_url']:
-                        text_color = (200, 200, 255)  # URLは青系
-                    line_preview_font = get_appropriate_font(CONTENT_FONT_SIZE, line)
-                    output_frame = draw_text_with_outline(output_frame, line, (preview_x, preview_y + i * CONTENT_LINE_SPACING), line_preview_font, text_color)
-            
-            # テキストが長い場合は省略表示
-            if len(preview_lines) > max_preview_lines:
-                remaining_preview_lines = len(preview_lines) - max_preview_lines
-                remaining_preview_text = f"...他{remaining_preview_lines}行"
-                remaining_preview_font = get_appropriate_font(CONTENT_FONT_SIZE, remaining_preview_text)
-                output_frame = draw_text_with_outline(output_frame, remaining_preview_text, (preview_x, preview_y + max_preview_lines * CONTENT_LINE_SPACING), remaining_preview_font, (150, 150, 150))
+            # 通常のテキストの場合は文字数で分割
+            max_chars_per_line = 40
+            lines = [content_text[i:i+max_chars_per_line] for i in range(0, len(content_text), max_chars_per_line)]
+        
+        # フル表示（省略なし、vCard/JSON対応）
+        for line in lines:
+            if content_y < WINDOW_HEIGHT - 80:  # 画面からはみ出さないように制限（余裕を持たせる）
+                line_font = get_appropriate_font(CONTENT_FONT_SIZE, line)
+                output_frame = draw_text_with_outline(output_frame, line, (LEFT_VIDEO_WIDTH + 20, content_y), line_font, (255, 255, 255))
+                content_y += CONTENT_LINE_SPACING + 5  # vCard/JSONの複雑な構造に対応して余裕を持たせる
+            else:
+                break
+        
+        # 右側全体をテキスト表示エリアとして使用（内容プレビューのみ）
+        # 画像プレビューは表示せず、テキストのみに集中
     
     elif current_display_qr:
         # QRコード内容が取得できていない場合
         content_y = 20
         fallback_title_font = get_appropriate_font(CONTENT_FONT_SIZE + 2, "QRコード内容")
         output_frame = draw_text_with_outline(output_frame, "QRコード内容:", (LEFT_VIDEO_WIDTH + 20, content_y), fallback_title_font, (255, 255, 255))
-        content_y += CONTENT_LINE_SPACING + 10
+        content_y += CONTENT_LINE_SPACING + 15
         fallback_loading_font = get_appropriate_font(CONTENT_FONT_SIZE, "内容を取得中")
         output_frame = draw_text_with_outline(output_frame, "内容を取得中...", (LEFT_VIDEO_WIDTH + 20, content_y), fallback_loading_font, (255, 255, 0))
-        content_y += CONTENT_LINE_SPACING
-        fallback_content_font = get_appropriate_font(CONTENT_FONT_SIZE, current_display_qr)
-        output_frame = draw_text_with_outline(output_frame, current_display_qr, (LEFT_VIDEO_WIDTH + 20, content_y), fallback_content_font, (255, 255, 255))
+        content_y += CONTENT_LINE_SPACING + 15
+        
+        # 内容を複数行に分割して表示（vCard/JSON対応）
+        fallback_content = current_display_qr
+        if len(fallback_content) > 40:
+            fallback_lines = [fallback_content[i:i+40] for i in range(0, len(fallback_content), 40)]
+            for line in fallback_lines:
+                if content_y < WINDOW_HEIGHT - 80:
+                    fallback_content_font = get_appropriate_font(CONTENT_FONT_SIZE, line)
+                    output_frame = draw_text_with_outline(output_frame, line, (LEFT_VIDEO_WIDTH + 20, content_y), fallback_content_font, (255, 255, 255))
+                    content_y += CONTENT_LINE_SPACING + 5
+                else:
+                    break
+        else:
+            fallback_content_font = get_appropriate_font(CONTENT_FONT_SIZE, fallback_content)
+            output_frame = draw_text_with_outline(output_frame, fallback_content, (LEFT_VIDEO_WIDTH + 20, content_y), fallback_content_font, (255, 255, 255))
     
     cv2.imshow("QRコードトラッキング", output_frame)
     
