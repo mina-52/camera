@@ -434,9 +434,7 @@ def detect_qr_code(frame):
                         qr_contents[qr_data] = get_qr_content_info(qr_data)
                         qr_counter += 1
                         
-                        # 新しいURLの場合は自動的にブラウザで開く
-                        if qr_data.startswith(('http://', 'https://')):
-                            open_url_in_browser(qr_data)
+                        # URLの場合は自動的にブラウザで開かない（手動で'o'キーを押す必要がある）
                     
                     managed_data = f"[{qr_manager[qr_data]}] {qr_data}"
                     detected_qr_codes[managed_data] = time.time()

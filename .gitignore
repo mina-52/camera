@@ -157,3 +157,7 @@ Desktop.ini
 *_analysis*.txt
 *detection*.txt
 *rust*.txt
+
+# QRコード関連ファイル
+qr_history.csv
+qr_detection/
