@@ -84,7 +84,6 @@ else:  # Windows環境
 save_counter = 0
 pause_counter = 0  # 一時停止した回数
 image_save_counter = 0  # 画像を保存した回数
-save_preview_flag = False  # プレビュー画像保存フラグ
 auto_save_flag = False  # 自動保存フラグ
 pause_sequence_counter = 0  # pauseごとの連番カウンター
 
@@ -137,37 +136,6 @@ def open_url_in_browser(url):
         print(f"URLを開くのに失敗しました: {e}")
         return False
 
-def save_preview_image(preview_frame, qr_data, frame_count, qr_number):
-    """プレビューエリアの画像を保存"""
-    global save_counter, image_save_counter
-    
-    # 右側プレビューエリアの座標を計算
-    preview_x = LEFT_VIDEO_WIDTH + 10
-    preview_y = 10
-    
-    # プレビューエリアを切り抜き
-    preview_img = preview_frame[preview_y:preview_y + RIGHT_PREVIEW_HEIGHT - 20, preview_x:preview_x + RIGHT_PREVIEW_WIDTH - 20]
-    
-    if preview_img.size > 0:
-        # ファイル名を生成
-        current_time = datetime.now()
-        time_str = current_time.strftime("%Y%m%d_%H%M%S")
-        filename = f"capture_{save_counter + 1:06d}_{time_str}_frame{frame_count}_preview_qr{qr_number}.jpg"
-        filepath = os.path.join(session_folder, filename)
-        
-        # 画像を保存
-        success = cv2.imwrite(filepath, preview_img)
-        if success:
-            print(f"プレビュー画像を保存しました: {filename}")
-            save_counter += 1
-            image_save_counter += 1
-            return True
-        else:
-            print(f"エラー: プレビュー画像の保存に失敗しました - {filepath}")
-            return False
-    else:
-        print("プレビューエリアが無効です")
-        return False
 
 def get_qr_content_info(qr_data):
     """QRコードの内容から情報を取得"""
@@ -444,8 +412,7 @@ def detect_qr_code(frame):
                     # 新しいQRコードの場合は自動保存フラグを設定（一度だけ保存）
                     if is_new_qr and qr_data not in saved_qr_codes:
                         # 自動保存フラグを設定
-                        global save_preview_flag, auto_save_flag
-                        save_preview_flag = True
+                        global auto_save_flag
                         auto_save_flag = True
                         saved_qr_codes.add(qr_data)  # 保存済みとして記録
                     
@@ -672,10 +639,6 @@ while True:
     cv2.imshow("QRコードトラッキング", output_frame)
     
     # プレビュー画像を保存（新しいQRコード検出時）
-    if save_preview_flag and current_display_qr and current_display_qr in qr_manager:
-        qr_number = qr_manager[current_display_qr]
-        save_preview_image(output_frame, current_display_qr, frame_count, qr_number)
-        save_preview_flag = False  # フラグをリセット
     
     # 自動保存（QRコード検出時、pause_counterを増やさない）
     if auto_save_flag and detected_qr_positions:
