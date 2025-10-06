@@ -15,7 +15,7 @@ import unicodedata
 qr_history = []
 detected_qr_codes = {}
 qr_manager = {}
-qr_counter = 1
+qr_counter = 1  # システム起動時に1から開始
 MAX_HISTORY = 10
 TIMEOUT = 1.0
 CSV_FILE = "qr_history.csv"
@@ -24,6 +24,7 @@ CSV_FILE = "qr_history.csv"
 qr_contents = {}  # QRコードの内容を保存
 current_display_qr = None  # 現在表示中のQRコード
 saved_qr_codes = set()  # 既に保存済みのQRコードを記録
+saved_content_previews = set()  # 既に保存済みの内容プレビューを記録
 current_history_index = 0  # 現在の履歴インデックス（1キーで順番切り替え用）
 
 # Mac環境での文字化け対策関数
@@ -120,6 +121,12 @@ HISTORY_FONT_SIZE = 14  # 文字サイズ
 HISTORY_ENTRY_SPACING = 40  # 履歴間の間隔
 CONTENT_FONT_SIZE = 24  # QRコード内容表示の文字サイズ（右側エリアを活用してさらに大きく）
 CONTENT_LINE_SPACING = 50  # 内容表示の行間隔（重複完全防止）
+
+def reset_csv_counter():
+    """CSVファイルの通し番号を1からリセットする"""
+    global qr_counter
+    qr_counter = 1
+    print("CSVファイルの通し番号を1からリセットしました")
 
 def save_qr_to_csv(qr_number, qr_data, timestamp):
     """QRコードのデータをCSVファイルに保存する"""
@@ -236,18 +243,23 @@ def save_qr_detection_images(frame, detected_qr_positions, frame_count, output_f
         else:
             print(f"エラー: 左側動画画面の保存に失敗しました - {left_filepath}")
     
-    # 2. 内容プレビュー画面を保存
+    # 2. 内容プレビュー画面を保存（重複防止）
     if output_frame is not None:
-        # 右側の内容プレビュー画面を切り抜き
-        right_preview_image = output_frame[0:RIGHT_PREVIEW_HEIGHT, LEFT_VIDEO_WIDTH:WINDOW_WIDTH]
-        right_filepath = os.path.join(session_folder, f"{base_filename}_A_content_preview.jpg")
-        success = cv2.imwrite(right_filepath, right_preview_image)
-        if success:
-            print(f"内容プレビュー画面を保存しました: {base_filename}_A_content_preview.jpg")
-            save_counter += 1
-            image_save_counter += 1
+        # 現在表示中のQRコードの内容プレビューが未保存の場合のみ保存
+        if current_display_qr and current_display_qr not in saved_content_previews:
+            # 右側の内容プレビュー画面を切り抜き
+            right_preview_image = output_frame[0:RIGHT_PREVIEW_HEIGHT, LEFT_VIDEO_WIDTH:WINDOW_WIDTH]
+            right_filepath = os.path.join(session_folder, f"{base_filename}_A_content_preview.jpg")
+            success = cv2.imwrite(right_filepath, right_preview_image)
+            if success:
+                print(f"内容プレビュー画面を保存しました: {base_filename}_A_content_preview.jpg")
+                save_counter += 1
+                image_save_counter += 1
+                saved_content_previews.add(current_display_qr)  # 保存済みとして記録
+            else:
+                print(f"エラー: 内容プレビュー画面の保存に失敗しました - {right_filepath}")
         else:
-            print(f"エラー: 内容プレビュー画面の保存に失敗しました - {right_filepath}")
+            print("内容プレビュー画面は既に保存済みです")
     
 
 def display_qr_history():
@@ -483,9 +495,13 @@ frame_count = 0
 print("QRコード検出を開始します。")
 print("キー操作:")
 print("  's'キー: QRコード検出画像を保存")
-print("  '1-9'キー: 履歴からQRコードを選択して内容表示")
-print("  'o'キー: 現在表示中のURLをブラウザで開く")
+print("  '1'キー: 履歴を順番に切り替え")
+print("  '2'キー: 現在表示中のURLをブラウザで開く")
+print("  '3-9'キー: 履歴から直接選択")
 print("  'q'キー: 終了")
+
+# システム起動時にCSVファイルの通し番号をリセット
+reset_csv_counter()
 
 while True:
     ret, frame = cap.read()
