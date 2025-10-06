@@ -24,6 +24,7 @@ CSV_FILE = "qr_history.csv"
 qr_contents = {}  # QRコードの内容を保存
 current_display_qr = None  # 現在表示中のQRコード
 current_history_index = 0  # 現在の履歴インデックス（1キーで順番切り替え用）
+image_cache = {}  # 画像キャッシュ（QRコードデータ -> 画像）
 
 # Mac環境での文字化け対策関数
 def process_text_for_mac(text):
@@ -251,10 +252,16 @@ def open_url_in_browser(url):
         print(f"URLを開くのに失敗しました: {e}")
         return False
 
-def find_corresponding_left_image(qr_data):
+def find_corresponding_left_image(qr_data, force_reload=False):
     """現在のQRコードに対応する左上画像（左側動画）を検索して読み込む"""
+    global image_cache
+    
     if not qr_data or not os.path.exists(session_folder):
         return None
+    
+    # キャッシュをチェック（強制再読み込みでない場合）
+    if not force_reload and qr_data in image_cache:
+        return image_cache[qr_data]
     
     try:
         # QRコードの管理番号を取得
@@ -284,6 +291,8 @@ def find_corresponding_left_image(qr_data):
                                         filepath = os.path.join(session_folder, filename)
                                         image = cv2.imread(filepath)
                                         if image is not None:
+                                            # キャッシュに保存
+                                            image_cache[qr_data] = image
                                             return image
                 except Exception as e:
                     print(f"CSVファイル読み込みエラー: {e}")
@@ -296,12 +305,21 @@ def find_corresponding_left_image(qr_data):
             latest_file = sorted(left_video_files)[-1]
             filepath = os.path.join(session_folder, latest_file)
             image = cv2.imread(filepath)
-            return image
+            if image is not None:
+                # キャッシュに保存
+                image_cache[qr_data] = image
+                return image
         
         return None
     except Exception as e:
         print(f"対応画像検索エラー: {e}")
         return None
+
+def clear_image_cache():
+    """画像キャッシュをクリアする"""
+    global image_cache
+    image_cache.clear()
+    print("画像キャッシュをクリアしました")
 
 
 def get_qr_content_info(qr_data):
@@ -598,6 +616,10 @@ def detect_qr_code(frame):
                     global current_display_qr, current_history_index
                     current_display_qr = qr_data
                     current_history_index = 0  # 新しいQRコード検出時は履歴インデックスをリセット
+                    
+                    # 新しいQRコード検出時に画像キャッシュをクリア
+                    if is_new_qr:
+                        clear_image_cache()
                     
                     # 新しいQRコードの場合は自動保存フラグを設定（一度だけ保存）
                     if is_new_qr:
@@ -929,6 +951,9 @@ while True:
             original_qr_data = selected_qr.split('] ', 1)[1] if '] ' in selected_qr else selected_qr
             current_display_qr = original_qr_data
             
+            # 履歴切り替え時に画像キャッシュをクリアして新しい画像を読み込む
+            clear_image_cache()
+            
             print(f"履歴切り替え ({next_index + 1}/{len(qr_history)}): {selected_qr}")
         else:
             print("履歴がありません")
@@ -971,6 +996,9 @@ while True:
             # 管理番号部分を除去して元のQRコードデータを取得
             original_qr_data = selected_qr.split('] ', 1)[1] if '] ' in selected_qr else selected_qr
             current_display_qr = original_qr_data
+            
+            # 直接選択時も画像キャッシュをクリアして新しい画像を読み込む
+            clear_image_cache()
             
             print(f"直接選択 ({selected_index + 1}/{len(qr_history)}): {selected_qr}")
     elif key == ord('q') or key == ord('Q'):  # qキー：終了
