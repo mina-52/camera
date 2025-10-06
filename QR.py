@@ -31,6 +31,8 @@ save_counter = 0
 pause_counter = 0  # 一時停止した回数
 image_save_counter = 0  # 画像を保存した回数
 save_preview_flag = False  # プレビュー画像保存フラグ
+auto_save_flag = False  # 自動保存フラグ
+pause_sequence_counter = 0  # pauseごとの連番カウンター
 
 # スクリーンサイズ取得
 try:
@@ -43,27 +45,27 @@ except Exception:
     screen_width = 1920
     screen_height = 1080
 
-# 画面を三分割に設定
+# 画面を新しいレイアウトに設定
 WINDOW_WIDTH = screen_width
 WINDOW_HEIGHT = screen_height
 
-# 上部：認識中の画像（画面の上半分）
-TOP_HEIGHT = WINDOW_HEIGHT // 2
-TOP_WIDTH = WINDOW_WIDTH
+# 左側：認識中の動画（画面の左半分）
+LEFT_VIDEO_WIDTH = WINDOW_WIDTH // 2
+LEFT_VIDEO_HEIGHT = WINDOW_HEIGHT
 
-# 下部：履歴とQRコード内容（画面の下半分を左右分割）
-BOTTOM_HEIGHT = WINDOW_HEIGHT // 2
-LEFT_WIDTH = WINDOW_WIDTH // 2  # 左側：履歴
-RIGHT_WIDTH = WINDOW_WIDTH // 2  # 右側：QRコード内容
+# 右側：内容プレビュー（画面の右半分）
+RIGHT_PREVIEW_WIDTH = WINDOW_WIDTH // 2
+RIGHT_PREVIEW_HEIGHT = WINDOW_HEIGHT
 
-# 右下プレビューエリアのサイズ（少し大きく）
-PREVIEW_WIDTH = int(RIGHT_WIDTH * 0.6)  # 右側の60%の幅
-PREVIEW_HEIGHT = int(BOTTOM_HEIGHT * 0.6)  # 下部の60%の高さ
+# 履歴表示エリア（左側の下部）
+HISTORY_AREA_HEIGHT = int(LEFT_VIDEO_HEIGHT * 0.3)  # 左側の30%の高さ
+VIDEO_AREA_HEIGHT = LEFT_VIDEO_HEIGHT - HISTORY_AREA_HEIGHT  # 残りの高さを動画に
 
 # 見やすさ向上のためのパラメータ調整
 HISTORY_FONT_SIZE = 14  # 文字サイズ
 HISTORY_ENTRY_SPACING = 40  # 履歴間の間隔
-CONTENT_FONT_SIZE = 12  # QRコード内容表示の文字サイズ
+CONTENT_FONT_SIZE = 16  # QRコード内容表示の文字サイズ（大きく）
+CONTENT_LINE_SPACING = 35  # 内容表示の行間隔（重複防止）
 
 def save_qr_to_csv(qr_number, qr_data, timestamp):
     """QRコードのデータをCSVファイルに保存する"""
@@ -85,12 +87,12 @@ def save_preview_image(preview_frame, qr_data, frame_count, qr_number):
     """プレビューエリアの画像を保存"""
     global save_counter, image_save_counter
     
-    # プレビューエリアの座標を計算
-    preview_x = LEFT_WIDTH + RIGHT_WIDTH // 2 + 10
-    preview_y = TOP_HEIGHT + BOTTOM_HEIGHT // 2 + 10
+    # 右側プレビューエリアの座標を計算
+    preview_x = LEFT_VIDEO_WIDTH + 10
+    preview_y = 10
     
     # プレビューエリアを切り抜き
-    preview_img = preview_frame[preview_y:preview_y + PREVIEW_HEIGHT, preview_x:preview_x + PREVIEW_WIDTH]
+    preview_img = preview_frame[preview_y:preview_y + RIGHT_PREVIEW_HEIGHT - 20, preview_x:preview_x + RIGHT_PREVIEW_WIDTH - 20]
     
     if preview_img.size > 0:
         # ファイル名を生成
@@ -120,8 +122,33 @@ def get_qr_content_info(qr_data):
         'content': qr_data,
         'is_url': False,
         'is_image_url': False,
-        'preview_image': None
+        'preview_image': None,
+        'csv_info': None
     }
+    
+    # CSV情報を取得（常に最新の情報を取得）
+    if qr_data in qr_manager:
+        qr_number = qr_manager[qr_data]
+        # CSVファイルから該当するQRコードの情報を取得
+        try:
+            if os.path.exists(CSV_FILE):
+                with open(CSV_FILE, 'r', encoding='utf-8') as file:
+                    lines = file.readlines()
+                    # 最新の情報を取得（最後に見つかった行）
+                    latest_csv_info = None
+                    for line in lines:
+                        parts = line.strip().split(',')
+                        if len(parts) >= 3 and parts[0] == str(qr_number):
+                            latest_csv_info = {
+                                'number': parts[0],
+                                'timestamp': parts[2] if len(parts) > 2 else 'Unknown',
+                                'content': parts[1] if len(parts) > 1 else qr_data  # CSVに保存された内容
+                            }
+                    if latest_csv_info:
+                        content_info['csv_info'] = latest_csv_info
+                        # QRコードから読み取った内容を表示用の内容として使用（CSVの内容は使用しない）
+        except Exception as e:
+            print(f"CSV情報取得エラー: {e}")
     
     # URLかどうかチェック
     if qr_data.startswith(('http://', 'https://')):
@@ -156,9 +183,14 @@ def get_qr_content_info(qr_data):
     
     return content_info
 
-def save_qr_detection_images(frame, detected_qr_positions, frame_count):
-    """QRコード検出画像を保存する関数"""
-    global save_counter, image_save_counter
+def save_qr_detection_images(frame, detected_qr_positions, frame_count, output_frame=None, increment_pause=True):
+    """QRコード検出画像を保存する関数（randoruto-wrs2.pyのファイル命名規則に準拠）"""
+    global save_counter, image_save_counter, pause_counter, pause_sequence_counter
+    
+    # pause_counterを増加（自動保存時は増やさない）
+    if increment_pause:
+        pause_counter += 1
+        pause_sequence_counter += 1
     
     # 1. 全体画像（検出されたQRコードに枠を付けた画像）を保存
     annotated_img = frame.copy()
@@ -169,10 +201,10 @@ def save_qr_detection_images(frame, detected_qr_positions, frame_count):
         # 管理番号部分を除去して元のQRコードデータを取得
         original_qr_data = qr_data.split('] ', 1)[1] if '] ' in qr_data else qr_data
         
-        x = int(rect.left * TOP_WIDTH / cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        y = int(rect.top * TOP_HEIGHT / cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        w = int(rect.width * TOP_WIDTH / cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        h = int(rect.height * TOP_HEIGHT / cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        x = int(rect.left * LEFT_VIDEO_WIDTH / cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        y = int(rect.top * VIDEO_AREA_HEIGHT / cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        w = int(rect.width * LEFT_VIDEO_WIDTH / cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(rect.height * VIDEO_AREA_HEIGHT / cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         
         # QRコードを囲む枠を描画
         cv2.rectangle(annotated_img, (x, y), (x + w, y + h), (0, 255, 0), 2)
@@ -180,29 +212,55 @@ def save_qr_detection_images(frame, detected_qr_positions, frame_count):
         # ラベルを追加
         cv2.putText(annotated_img, qr_data, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
     
-    # ファイル名を生成（撮影順序で並ぶように調整）
+    # ファイル名を生成（randoruto-wrs2.pyの命名規則に準拠）
     current_time = datetime.now()
     time_str = current_time.strftime("%Y%m%d_%H%M%S")
-    filename = f"capture_{save_counter + 1:06d}_{time_str}_frame{frame_count}_{detection_count}qr_codes.jpg"
-    filepath = os.path.join(session_folder, filename)
+    base_filename = f"capture_{pause_sequence_counter:06d}_{time_str}_frame{frame_count}_{detection_count}qr_codes"
     
-    # 画像を保存
-    success = cv2.imwrite(filepath, annotated_img)
+    # 1. 全体画像（検出結果）を保存
+    whole_filepath = os.path.join(session_folder, f"{base_filename}_R_whole_detection.jpg")
+    success = cv2.imwrite(whole_filepath, annotated_img)
     if success:
-        print(f"QRコード検出画像を保存しました: {filename} (検出QRコード数: {detection_count})")
+        print(f"全体画像（検出結果）を保存しました: {base_filename}_R_whole_detection.jpg (検出QRコード数: {detection_count})")
         save_counter += 1
         image_save_counter += 1
     else:
-        print(f"エラー: 画像の保存に失敗しました - {filepath}")
+        print(f"エラー: 全体画像の保存に失敗しました - {whole_filepath}")
     
-    # 2. QRコード内容の画像も保存（画像URLの場合）
+    # 2. 左側動画画像を保存
+    if output_frame is not None:
+        # 左側の動画画像を切り抜き
+        left_video_image = output_frame[0:VIDEO_AREA_HEIGHT, 0:LEFT_VIDEO_WIDTH]
+        left_filepath = os.path.join(session_folder, f"{base_filename}_M_left_video.jpg")
+        success = cv2.imwrite(left_filepath, left_video_image)
+        if success:
+            print(f"左側動画画像を保存しました: {base_filename}_M_left_video.jpg")
+            save_counter += 1
+            image_save_counter += 1
+        else:
+            print(f"エラー: 左側動画画像の保存に失敗しました - {left_filepath}")
+    
+    # 3. 右側内容プレビュー画像を保存
+    if output_frame is not None:
+        # 右側の内容プレビュー画像を切り抜き
+        right_preview_image = output_frame[0:RIGHT_PREVIEW_HEIGHT, LEFT_VIDEO_WIDTH:WINDOW_WIDTH]
+        right_filepath = os.path.join(session_folder, f"{base_filename}_A_right_preview.jpg")
+        success = cv2.imwrite(right_filepath, right_preview_image)
+        if success:
+            print(f"右側内容プレビュー画像を保存しました: {base_filename}_A_right_preview.jpg")
+            save_counter += 1
+            image_save_counter += 1
+        else:
+            print(f"エラー: 右側内容プレビュー画像の保存に失敗しました - {right_filepath}")
+    
+    # 4. QRコード内容の画像も保存（画像URLの場合）
     for qr_data, rect in detected_qr_positions.items():
         original_qr_data = qr_data.split('] ', 1)[1] if '] ' in qr_data else qr_data
         if original_qr_data in qr_contents:
             content_info = qr_contents[original_qr_data]
             if content_info['is_image_url'] and content_info['preview_image'] is not None:
                 # QRコード内容画像を保存
-                content_filename = f"capture_{save_counter:06d}_{time_str}_frame{frame_count}_qr_content_{qr_manager[original_qr_data]}.jpg"
+                content_filename = f"{base_filename}_A_qr_content_{qr_manager[original_qr_data]}.jpg"
                 content_filepath = os.path.join(session_folder, content_filename)
                 cv2.imwrite(content_filepath, content_info['preview_image'])
                 print(f"QRコード内容画像を保存しました: {content_filename}")
@@ -219,38 +277,91 @@ def display_qr_history():
         print(df.to_string(index=False))
 
 def get_appropriate_font(size, text=""):
-    """テキストに適したフォントを取得"""
+    """テキストに適したフォントを取得（日本語・英語・記号対応）"""
     try:
-        # 日本語文字が含まれているかチェック
-        if any('\u3040' <= char <= '\u309F' or  # ひらがな
-               '\u30A0' <= char <= '\u30FF' or  # カタカナ
-               '\u4E00' <= char <= '\u9FAF' or  # 漢字
-               '\uFF00' <= char <= '\uFFEF'     # 全角文字
-               for char in text):
-            return ImageFont.truetype(FONT_PATH_JAPANESE, size)
+        # 日本語文字が含まれているかチェック（より包括的に）
+        has_japanese = any(
+            '\u3040' <= char <= '\u309F' or  # ひらがな
+            '\u30A0' <= char <= '\u30FF' or  # カタカナ
+            '\u4E00' <= char <= '\u9FAF' or  # 漢字
+            '\uFF00' <= char <= '\uFFEF' or  # 全角文字
+            '\u3000' <= char <= '\u303F'     # CJK記号・句読点
+            for char in text
+        )
+        
+        # 特殊記号や絵文字が含まれているかチェック
+        has_special_chars = any(
+            ord(char) > 127 or  # ASCII以外の文字
+            char in '！？。、；：""''（）【】《》〈〉「」『』〔〕｛｝'  # 日本語記号
+            for char in text
+        )
+        
+        if has_japanese or has_special_chars:
+            # 日本語フォントを試す
+            try:
+                return ImageFont.truetype(FONT_PATH_JAPANESE, size)
+            except:
+                return ImageFont.load_default()
         else:
-            return ImageFont.truetype(FONT_PATH_ENGLISH, size)
-    except:
-        # フォントが見つからない場合はデフォルトフォントを使用
-        try:
-            return ImageFont.truetype(FONT_PATH_JAPANESE, size)
-        except:
-            return ImageFont.load_default()
+            # 英語フォントを試す
+            try:
+                return ImageFont.truetype(FONT_PATH_ENGLISH, size)
+            except:
+                try:
+                    return ImageFont.truetype(FONT_PATH_JAPANESE, size)
+                except:
+                    return ImageFont.load_default()
+    except Exception as e:
+        print(f"フォント取得エラー: {e}")
+        return ImageFont.load_default()
 
 def draw_text_with_outline(img, text, position, font, text_color, outline_color=(0, 0, 0)):
-    """文字を見やすくするために黒縁を適度に細くし、白字を適度に強調"""
+    """文字を見やすくするために黒縁を適度に細くし、白字を適度に強調（文字化け対策強化）"""
     try:
+        # テキストの文字エンコーディングを確認・修正
+        if isinstance(text, bytes):
+            try:
+                text = text.decode('utf-8')
+            except UnicodeDecodeError:
+                try:
+                    text = text.decode('shift_jis')
+                except UnicodeDecodeError:
+                    text = text.decode('utf-8', errors='replace')
+        
+        # 文字列を安全に処理
+        safe_text = str(text).encode('utf-8', errors='replace').decode('utf-8')
+        
         pil_img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
         draw = ImageDraw.Draw(pil_img)
         x, y = position
+        
+        # アウトラインを描画
         offsets = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
         for dx, dy in offsets:
-            draw.text((x + dx, y + dy), text, font=font, fill=outline_color)
-        draw.text((x, y), text, font=font, fill=text_color)
-        draw.text((x + 0.5, y + 0.5), text, font=font, fill=text_color)
+            try:
+                draw.text((x + dx, y + dy), safe_text, font=font, fill=outline_color)
+            except Exception:
+                # フォントエラーの場合はデフォルトフォントで再試行
+                try:
+                    default_font = ImageFont.load_default()
+                    draw.text((x + dx, y + dy), safe_text, font=default_font, fill=outline_color)
+                except:
+                    pass
+        
+        # メインテキストを描画
+        try:
+            draw.text((x, y), safe_text, font=font, fill=text_color)
+        except Exception:
+            # フォントエラーの場合はデフォルトフォントで再試行
+            try:
+                default_font = ImageFont.load_default()
+                draw.text((x, y), safe_text, font=default_font, fill=text_color)
+            except:
+                pass
+        
         return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
     except Exception as e:
-        print(f"文字描画エラー: {e}")
+        print(f"文字描画エラー: {e}, テキスト: {repr(text)}")
         return img
 
 def detect_qr_code(frame):
@@ -287,11 +398,12 @@ def detect_qr_code(frame):
                     global current_display_qr
                     current_display_qr = qr_data
                     
-                    # 新しいQRコードの場合はプレビュー画像を保存
+                    # 新しいQRコードの場合は自動保存フラグを設定
                     if is_new_qr:
-                        # プレビュー画像を保存するためのフラグを設定
-                        global save_preview_flag
+                        # 自動保存フラグを設定
+                        global save_preview_flag, auto_save_flag
                         save_preview_flag = True
+                        auto_save_flag = True
                     
                     # 座標情報を取得（pointsから矩形を作成）
                     if points is not None and len(points) > i:
@@ -328,8 +440,8 @@ def detect_qr_code(frame):
 
 # OBS仮想カメラの読み込み設定
 cap = cv2.VideoCapture(1)  # 仮想カメラのインデックス。環境に合わせて変更してください
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, TOP_WIDTH)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, TOP_HEIGHT)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, LEFT_VIDEO_WIDTH)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, VIDEO_AREA_HEIGHT)
 cap.set(cv2.CAP_PROP_FPS, 30)
 
 if not cap.isOpened():
@@ -372,28 +484,41 @@ while True:
     detected_qr_positions = detect_qr_code(frame)
     current_time = time.time()
     
-    # 三分割画面を作成
+    # 新しいレイアウト画面を作成
     output_frame = np.zeros((WINDOW_HEIGHT, WINDOW_WIDTH, 3), dtype=np.uint8)
     
-    # 上部：認識中の画像
-    resized_frame = cv2.resize(frame, (TOP_WIDTH, TOP_HEIGHT))
-    output_frame[0:TOP_HEIGHT, 0:TOP_WIDTH] = resized_frame
+    # 左側：認識中の動画
+    resized_frame = cv2.resize(frame, (LEFT_VIDEO_WIDTH, VIDEO_AREA_HEIGHT))
+    output_frame[0:VIDEO_AREA_HEIGHT, 0:LEFT_VIDEO_WIDTH] = resized_frame
     
     # 検出されたQRコードに枠を描画
     for qr_data, rect in detected_qr_positions.items():
-        x = int(rect.left * TOP_WIDTH / cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        y = int(rect.top * TOP_HEIGHT / cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        w = int(rect.width * TOP_WIDTH / cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        h = int(rect.height * TOP_HEIGHT / cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        x = int(rect.left * LEFT_VIDEO_WIDTH / cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        y = int(rect.top * VIDEO_AREA_HEIGHT / cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        w = int(rect.width * LEFT_VIDEO_WIDTH / cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(rect.height * VIDEO_AREA_HEIGHT / cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         
         cv2.rectangle(output_frame, (x, y), (x + w, y + h), (0, 255, 0), 4)
-        cv2.putText(output_frame, qr_data, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+        
+        # 日本語対応のテキスト描画
+        try:
+            # テキストを安全に処理
+            safe_text = str(qr_data).encode('utf-8', errors='replace').decode('utf-8')
+            # 長いテキストは短縮
+            display_text = safe_text[:30] + "..." if len(safe_text) > 30 else safe_text
+            
+            # 日本語フォントを使用してテキストを描画
+            font = get_appropriate_font(16, display_text)
+            output_frame = draw_text_with_outline(output_frame, display_text, (x, y - 10), font, (0, 255, 0))
+        except Exception as e:
+            # エラーの場合はOpenCVのデフォルトフォントを使用
+            cv2.putText(output_frame, str(qr_data)[:30], (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
     
-    # 下部左：履歴表示
-    cv2.rectangle(output_frame, (0, TOP_HEIGHT), (LEFT_WIDTH, WINDOW_HEIGHT), (0, 0, 0), -1)
+    # 左側下部：履歴表示エリア
+    cv2.rectangle(output_frame, (0, VIDEO_AREA_HEIGHT), (LEFT_VIDEO_WIDTH, WINDOW_HEIGHT), (0, 0, 0), -1)
     
     # カウンター情報を表示
-    counter_y = TOP_HEIGHT + 20
+    counter_y = VIDEO_AREA_HEIGHT + 20
     counter_font = get_appropriate_font(HISTORY_FONT_SIZE, "Pause Count")
     output_frame = draw_text_with_outline(output_frame, f"Pause Count: {pause_counter}", (20, counter_y), counter_font, (255, 255, 255))
     counter_y += 30
@@ -413,11 +538,8 @@ while True:
         output_frame = draw_text_with_outline(output_frame, display_text, (20, y_offset), history_font, text_color)
         y_offset += HISTORY_ENTRY_SPACING
     
-    # 下部右：QRコード内容表示エリア（上部）
-    cv2.rectangle(output_frame, (LEFT_WIDTH, TOP_HEIGHT), (WINDOW_WIDTH, TOP_HEIGHT + BOTTOM_HEIGHT // 2), (40, 40, 40), -1)
-    
-    # 右下：プレビューエリア
-    cv2.rectangle(output_frame, (LEFT_WIDTH + RIGHT_WIDTH // 2, TOP_HEIGHT + BOTTOM_HEIGHT // 2), (WINDOW_WIDTH, WINDOW_HEIGHT), (60, 60, 60), -1)
+    # 右側：内容プレビューエリア（大きく）
+    cv2.rectangle(output_frame, (LEFT_VIDEO_WIDTH, 0), (WINDOW_WIDTH, WINDOW_HEIGHT), (40, 40, 40), -1)
     
     # 最新検出のQRコードを自動表示（選択されていない場合）
     if not current_display_qr and qr_history:
@@ -427,69 +549,99 @@ while True:
     
     if current_display_qr and current_display_qr in qr_contents:
         content_info = qr_contents[current_display_qr]
-        content_y = TOP_HEIGHT + 20
+        content_y = 20
         
-        # タイトル
-        title_font = get_appropriate_font(HISTORY_FONT_SIZE, "QRコード内容")
-        output_frame = draw_text_with_outline(output_frame, "QRコード内容:", (LEFT_WIDTH + 20, content_y), title_font, (255, 255, 255))
-        content_y += 40
+        # タイトル（大きく）
+        title_text = f"QR#{qr_manager.get(current_display_qr, '?')}: {content_info['type']}"
+        title_font = get_appropriate_font(CONTENT_FONT_SIZE + 4, title_text)
+        output_frame = draw_text_with_outline(output_frame, title_text, (LEFT_VIDEO_WIDTH + 20, content_y), title_font, (255, 255, 255))
+        content_y += CONTENT_LINE_SPACING + 10
         
-        # 内容タイプ
-        type_text = f"タイプ: {content_info['type']}"
-        type_font = get_appropriate_font(HISTORY_FONT_SIZE, type_text)
-        output_frame = draw_text_with_outline(output_frame, type_text, (LEFT_WIDTH + 20, content_y), type_font, (0, 255, 255))
-        content_y += 30
+        # CSV情報を表示（大きく）
+        if content_info.get('csv_info'):
+            csv_info = content_info['csv_info']
+            csv_text = f"CSV番号: {csv_info['number']}"
+            csv_font = get_appropriate_font(CONTENT_FONT_SIZE, csv_text)
+            output_frame = draw_text_with_outline(output_frame, csv_text, (LEFT_VIDEO_WIDTH + 20, content_y), csv_font, (0, 255, 255))
+            content_y += CONTENT_LINE_SPACING
+            
+            timestamp_text = f"記録時刻: {csv_info['timestamp']}"
+            timestamp_font = get_appropriate_font(CONTENT_FONT_SIZE, timestamp_text)
+            output_frame = draw_text_with_outline(output_frame, timestamp_text, (LEFT_VIDEO_WIDTH + 20, content_y), timestamp_font, (0, 255, 255))
+            content_y += CONTENT_LINE_SPACING
+            
+            # QRコードから読み取った内容であることを表示
+            qr_source_text = "※QRコードから読み取った内容"
+            qr_source_font = get_appropriate_font(CONTENT_FONT_SIZE - 2, qr_source_text)
+            output_frame = draw_text_with_outline(output_frame, qr_source_text, (LEFT_VIDEO_WIDTH + 20, content_y), qr_source_font, (255, 255, 0))
+            content_y += CONTENT_LINE_SPACING + 10
         
-        # URLかどうか
+        # URLかどうか（大きく）
         if content_info['is_url']:
             url_text = "URL: はい"
-            url_font = get_appropriate_font(HISTORY_FONT_SIZE, url_text)
-            output_frame = draw_text_with_outline(output_frame, url_text, (LEFT_WIDTH + 20, content_y), url_font, (0, 255, 0))
-            content_y += 30
+            url_font = get_appropriate_font(CONTENT_FONT_SIZE, url_text)
+            output_frame = draw_text_with_outline(output_frame, url_text, (LEFT_VIDEO_WIDTH + 20, content_y), url_font, (0, 255, 0))
+            content_y += CONTENT_LINE_SPACING
         
-        # 画像URLかどうか
+        # 画像URLかどうか（大きく）
         if content_info['is_image_url']:
             img_url_text = "画像URL: はい"
-            img_font = get_appropriate_font(HISTORY_FONT_SIZE, img_url_text)
-            output_frame = draw_text_with_outline(output_frame, img_url_text, (LEFT_WIDTH + 20, content_y), img_font, (255, 165, 0))
-            content_y += 30
+            img_font = get_appropriate_font(CONTENT_FONT_SIZE, img_url_text)
+            output_frame = draw_text_with_outline(output_frame, img_url_text, (LEFT_VIDEO_WIDTH + 20, content_y), img_font, (255, 165, 0))
+            content_y += CONTENT_LINE_SPACING
         
-        # 内容テキスト（改行対応）
+        # 内容テキスト（改行対応、大きなエリアに合わせて、大きく）
         content_text = content_info['content']
-        max_chars_per_line = 25  # プレビューエリアに合わせて短く
+        max_chars_per_line = 35  # 大きなフォントに合わせて少し短く
         lines = [content_text[i:i+max_chars_per_line] for i in range(0, len(content_text), max_chars_per_line)]
         
-        # テキスト表示エリアの制限（プレビューエリアの高さに合わせて）
-        max_lines = 4  # 最大4行まで表示
+        # テキスト表示エリアの制限（大きなエリアに合わせて）
+        max_lines = 6  # 大きなフォントに合わせて行数を減らす
         for line in lines[:max_lines]:
-            line_font = get_appropriate_font(HISTORY_FONT_SIZE, line)
-            output_frame = draw_text_with_outline(output_frame, line, (LEFT_WIDTH + 20, content_y), line_font, (255, 255, 255))
-            content_y += 25
+            line_font = get_appropriate_font(CONTENT_FONT_SIZE, line)
+            output_frame = draw_text_with_outline(output_frame, line, (LEFT_VIDEO_WIDTH + 20, content_y), line_font, (255, 255, 255))
+            content_y += CONTENT_LINE_SPACING
         
         # テキストが長い場合は省略表示
         if len(lines) > max_lines:
             remaining_lines = len(lines) - max_lines
             remaining_text = f"...他{remaining_lines}行"
-            remaining_font = get_appropriate_font(HISTORY_FONT_SIZE, remaining_text)
-            output_frame = draw_text_with_outline(output_frame, remaining_text, (LEFT_WIDTH + 20, content_y), remaining_font, (200, 200, 200))
-            content_y += 25
+            remaining_font = get_appropriate_font(CONTENT_FONT_SIZE, remaining_text)
+            output_frame = draw_text_with_outline(output_frame, remaining_text, (LEFT_VIDEO_WIDTH + 20, content_y), remaining_font, (200, 200, 200))
+            content_y += CONTENT_LINE_SPACING
         
-        # 右下プレビューエリアで内容を表示
-        preview_x = LEFT_WIDTH + RIGHT_WIDTH // 2 + 10
-        preview_y = TOP_HEIGHT + BOTTOM_HEIGHT // 2 + 10
+        # プレビューエリアの座標を設定
+        preview_x = LEFT_VIDEO_WIDTH + 20
+        preview_y = content_y + 20
+        
+        # 右側プレビューエリアで画像を表示（大きなエリアに合わせて）
+        if content_info['preview_image'] is not None:
+            preview_img = content_info['preview_image']
+            preview_height, preview_width = preview_img.shape[:2]
+            max_preview_size = min(RIGHT_PREVIEW_WIDTH - 100, RIGHT_PREVIEW_HEIGHT - 200)  # 大きなエリアに合わせて
+            
+            if preview_height > max_preview_size or preview_width > max_preview_size:
+                scale = max_preview_size / max(preview_height, preview_width)
+                new_width = int(preview_width * scale)
+                new_height = int(preview_height * scale)
+                preview_img = cv2.resize(preview_img, (new_width, new_height))
+            
+            if preview_x + preview_img.shape[1] <= WINDOW_WIDTH and preview_y + preview_img.shape[0] <= WINDOW_HEIGHT:
+                output_frame[preview_y:preview_y + preview_img.shape[0], preview_x:preview_x + preview_img.shape[1]] = preview_img
         
         if content_info['is_image_url'] and content_info['preview_image'] is not None:
             # 画像URLの場合は画像プレビュー
-            preview_title_font = get_appropriate_font(HISTORY_FONT_SIZE, "画像プレビュー")
+            preview_title_font = get_appropriate_font(CONTENT_FONT_SIZE, "画像プレビュー")
             output_frame = draw_text_with_outline(output_frame, "画像プレビュー:", (preview_x, preview_y), preview_title_font, (255, 255, 255))
+            preview_y += CONTENT_LINE_SPACING
             
             # 画像プレビューの処理
             preview_img = content_info['preview_image']
             h, w = preview_img.shape[:2]
             
             # プレビューエリアのサイズに合わせて画像をリサイズ
-            max_img_height = PREVIEW_HEIGHT - 40
-            max_img_width = PREVIEW_WIDTH - 20
+            max_img_height = RIGHT_PREVIEW_HEIGHT - 200
+            max_img_width = RIGHT_PREVIEW_WIDTH - 100
             
             if h > max_img_height:
                 scale = max_img_height / h
@@ -512,41 +664,41 @@ while True:
                 cv2.rectangle(output_frame, (preview_x, img_start_y), (preview_x + w, img_start_y + h), (255, 255, 255), 2)
         else:
             # テキスト内容の場合はテキストプレビュー
-            content_preview_font = get_appropriate_font(HISTORY_FONT_SIZE, "内容プレビュー")
+            content_preview_font = get_appropriate_font(CONTENT_FONT_SIZE, "内容プレビュー")
             output_frame = draw_text_with_outline(output_frame, "内容プレビュー:", (preview_x, preview_y), content_preview_font, (255, 255, 255))
-            preview_y += 30
+            preview_y += CONTENT_LINE_SPACING
             
             # プレビューエリアにテキスト内容を表示
-            preview_lines = [content_text[i:i+18] for i in range(0, len(content_text), 18)]  # 少し短くして表示
-            max_preview_lines = 8  # プレビューエリアに表示できる最大行数
+            preview_lines = [content_text[i:i+25] for i in range(0, len(content_text), 25)]  # 大きなフォントに合わせて調整
+            max_preview_lines = 5  # 大きなフォントに合わせて行数を減らす
             
             for i, line in enumerate(preview_lines[:max_preview_lines]):
-                if preview_y + i * 18 < WINDOW_HEIGHT - 20:
+                if preview_y + i * CONTENT_LINE_SPACING < WINDOW_HEIGHT - 20:
                     # テキストの色を内容タイプに応じて変更
                     text_color = (200, 255, 200)  # 通常テキスト
                     if content_info['is_url']:
                         text_color = (200, 200, 255)  # URLは青系
-                    line_preview_font = get_appropriate_font(HISTORY_FONT_SIZE, line)
-                    output_frame = draw_text_with_outline(output_frame, line, (preview_x, preview_y + i * 18), line_preview_font, text_color)
+                    line_preview_font = get_appropriate_font(CONTENT_FONT_SIZE, line)
+                    output_frame = draw_text_with_outline(output_frame, line, (preview_x, preview_y + i * CONTENT_LINE_SPACING), line_preview_font, text_color)
             
             # テキストが長い場合は省略表示
             if len(preview_lines) > max_preview_lines:
                 remaining_preview_lines = len(preview_lines) - max_preview_lines
                 remaining_preview_text = f"...他{remaining_preview_lines}行"
-                remaining_preview_font = get_appropriate_font(HISTORY_FONT_SIZE, remaining_preview_text)
-                output_frame = draw_text_with_outline(output_frame, remaining_preview_text, (preview_x, preview_y + max_preview_lines * 18), remaining_preview_font, (150, 150, 150))
+                remaining_preview_font = get_appropriate_font(CONTENT_FONT_SIZE, remaining_preview_text)
+                output_frame = draw_text_with_outline(output_frame, remaining_preview_text, (preview_x, preview_y + max_preview_lines * CONTENT_LINE_SPACING), remaining_preview_font, (150, 150, 150))
     
     elif current_display_qr:
         # QRコード内容が取得できていない場合
-        content_y = TOP_HEIGHT + 20
-        fallback_title_font = get_appropriate_font(HISTORY_FONT_SIZE, "QRコード内容")
-        output_frame = draw_text_with_outline(output_frame, "QRコード内容:", (LEFT_WIDTH + 20, content_y), fallback_title_font, (255, 255, 255))
-        content_y += 40
-        fallback_loading_font = get_appropriate_font(HISTORY_FONT_SIZE, "内容を取得中")
-        output_frame = draw_text_with_outline(output_frame, "内容を取得中...", (LEFT_WIDTH + 20, content_y), fallback_loading_font, (255, 255, 0))
-        content_y += 30
-        fallback_content_font = get_appropriate_font(HISTORY_FONT_SIZE, current_display_qr)
-        output_frame = draw_text_with_outline(output_frame, current_display_qr, (LEFT_WIDTH + 20, content_y), fallback_content_font, (255, 255, 255))
+        content_y = 20
+        fallback_title_font = get_appropriate_font(CONTENT_FONT_SIZE + 2, "QRコード内容")
+        output_frame = draw_text_with_outline(output_frame, "QRコード内容:", (LEFT_VIDEO_WIDTH + 20, content_y), fallback_title_font, (255, 255, 255))
+        content_y += CONTENT_LINE_SPACING + 10
+        fallback_loading_font = get_appropriate_font(CONTENT_FONT_SIZE, "内容を取得中")
+        output_frame = draw_text_with_outline(output_frame, "内容を取得中...", (LEFT_VIDEO_WIDTH + 20, content_y), fallback_loading_font, (255, 255, 0))
+        content_y += CONTENT_LINE_SPACING
+        fallback_content_font = get_appropriate_font(CONTENT_FONT_SIZE, current_display_qr)
+        output_frame = draw_text_with_outline(output_frame, current_display_qr, (LEFT_VIDEO_WIDTH + 20, content_y), fallback_content_font, (255, 255, 255))
     
     cv2.imshow("QRコードトラッキング", output_frame)
     
@@ -555,11 +707,17 @@ while True:
         qr_number = qr_manager[current_display_qr]
         save_preview_image(output_frame, current_display_qr, frame_count, qr_number)
         save_preview_flag = False  # フラグをリセット
+    
+    # 自動保存（QRコード検出時、pause_counterを増やさない）
+    if auto_save_flag and detected_qr_positions:
+        save_qr_detection_images(frame, detected_qr_positions, frame_count, output_frame, increment_pause=False)
+        auto_save_flag = False  # フラグをリセット
+        print(f"QRコード検出により自動保存しました (Total: {save_counter} files)")
 
     # キー操作の処理
     key = cv2.waitKey(1) & 0xFF
     if key == ord('s') or key == ord('S'):  # sキー：QRコード検出画像を保存
-        save_qr_detection_images(frame, detected_qr_positions, frame_count)
+        save_qr_detection_images(frame, detected_qr_positions, frame_count, output_frame)
         pause_counter += 1
         print(f"QRコード検出画像を保存しました (Total: {save_counter} files)")
     elif key >= ord('1') and key <= ord('9'):  # 1-9キー：履歴から選択
