@@ -178,25 +178,20 @@ def is_qr_preview_saved_in_csv(qr_data):
     
     try:
         processed_qr_data = process_text_for_mac(qr_data)
-        print(f"プレビュー保存チェック: 検索対象='{processed_qr_data}'")
         
         with open(CSV_FILE, 'r', encoding='utf-8') as file:
             reader = csv.reader(file)
             # ヘッダー行をスキップ
             next(reader, None)
             
-            for row_num, row in enumerate(reader, start=2):  # 行番号（ヘッダーを除く）
+            for row in reader:
                 if len(row) >= 4:  # プレビュー保存済み列も含む
                     csv_content = row[1]  # QRコード内容の列
                     preview_saved = row[3] if len(row) > 3 else 'No'  # プレビュー保存済み列
                     # 文字列の完全一致でチェック
                     if csv_content.strip() == processed_qr_data.strip() and preview_saved == 'Yes':
-                        print(f"  行{row_num}: プレビュー保存済みを発見 - '{csv_content}' (プレビュー保存状態: {preview_saved})")
                         return True
-                    elif csv_content.strip() == processed_qr_data.strip():
-                        print(f"  行{row_num}: QRコード内容は一致するがプレビュー未保存 - '{csv_content}' (プレビュー保存状態: {preview_saved})")
         
-        print(f"  プレビュー保存済みのQRコードが見つかりませんでした")
         return False
     except Exception as e:
         print(f"プレビュー保存チェックエラー: {e}")
@@ -217,7 +212,6 @@ def update_preview_saved_status(qr_data, saved=True):
         
         # 対象のQRコードの行を見つけて更新
         processed_qr_data = process_text_for_mac(qr_data)
-        print(f"プレビュー保存状態更新: 対象='{processed_qr_data}', saved={saved}")
         
         updated = False
         for i, row in enumerate(rows):
@@ -227,10 +221,8 @@ def update_preview_saved_status(qr_data, saved=True):
                 # プレビュー保存済み列を更新
                 while len(row) < 4:
                     row.append('No')
-                old_status = row[3] if len(row) > 3 else 'No'
                 row[3] = 'Yes' if saved else 'No'
                 updated = True
-                print(f"  行{i+1}: プレビュー保存状態を更新 '{old_status}' → '{row[3]}'")
                 break
         
         # 更新された内容をCSVファイルに書き戻し
@@ -238,10 +230,8 @@ def update_preview_saved_status(qr_data, saved=True):
             with open(CSV_FILE, 'w', newline='', encoding='utf-8') as file:
                 writer = csv.writer(file)
                 writer.writerows(rows)
-            print(f"  CSVファイルを更新しました")
             return True
         else:
-            print(f"  更新対象のQRコードが見つかりませんでした")
             return False
     except Exception as e:
         print(f"プレビュー保存状態更新エラー: {e}")
@@ -326,7 +316,7 @@ def get_qr_content_info(qr_data):
     
     return content_info
 
-def save_qr_detection_images(frame, detected_qr_positions, frame_count, output_frame=None, increment_pause=True, force_save_preview=False):
+def save_qr_detection_images(frame, detected_qr_positions, frame_count, output_frame=None, increment_pause=True, force_save_preview=False, save_preview=True):
     """QRコード検出画像を保存する関数（randoruto-wrs2.pyのファイル命名規則に準拠）"""
     global save_counter, image_save_counter, pause_counter, pause_sequence_counter
     
@@ -356,8 +346,8 @@ def save_qr_detection_images(frame, detected_qr_positions, frame_count, output_f
         else:
             print(f"エラー: 左側動画画面の保存に失敗しました - {left_filepath}")
     
-    # 2. 内容プレビュー画面を保存（CSVベースの重複防止 + 強制保存オプション）
-    if output_frame is not None:
+    # 2. 内容プレビュー画面を保存（save_previewパラメータで制御）
+    if output_frame is not None and save_preview:
         # 現在表示中のQRコードの内容プレビューが未保存の場合、または強制保存の場合のみ保存
         preview_already_saved = is_qr_preview_saved_in_csv(current_display_qr) if current_display_qr else False
         should_save_preview = (
@@ -365,10 +355,7 @@ def save_qr_detection_images(frame, detected_qr_positions, frame_count, output_f
             (not preview_already_saved or force_save_preview)
         )
         
-        print(f"プレビュー保存判定: current_display_qr={current_display_qr}")
-        print(f"  - preview_already_saved={preview_already_saved}")
-        print(f"  - force_save_preview={force_save_preview}")
-        print(f"  - should_save_preview={should_save_preview}")
+        # プレビュー保存判定（デバッグ情報は削除）
         
         if should_save_preview:
             # 右側の内容プレビュー画面を切り抜き
@@ -388,6 +375,9 @@ def save_qr_detection_images(frame, detected_qr_positions, frame_count, output_f
                 print("内容プレビュー画面は既に保存済みです（CSV確認済み）")
             else:
                 print("保存する内容プレビューがありません")
+    else:
+        if not save_preview:
+            print("プレビュー保存は無効化されています")
     
 
 def display_qr_history():
@@ -621,11 +611,15 @@ frame_count = 0
 
 print("QRコード検出を開始します。")
 print("キー操作:")
-print("  's'キー: QRコード検出画像を保存")
 print("  '1'キー: 履歴を順番に切り替え")
-print("  '2'キー: 現在表示中のURLをブラウザで開く")
+print("  '2'キー: 内容プレビューを手動保存")
+print("  'Enter'キー: 現在表示中のURLをブラウザで開く")
 print("  '3-9'キー: 履歴から直接選択")
 print("  'q'キー: 終了")
+print("色分け表示:")
+print("  赤色: 新しく検出されたQRコード")
+print("  シアン色: 現在選択中のQRコード")
+print("  緑色: プレビュー保存済みのQRコード")
 
 # システム起動時にCSVファイルの通し番号をリセット
 reset_csv_counter()
@@ -681,17 +675,23 @@ while True:
     output_frame = draw_text_with_outline(output_frame, f"Image Saves: {image_save_counter}", (20, counter_y), counter_font, (255, 255, 255))
     counter_y += 50
     
-    # QRコード履歴を表示（最初の7文字のみ）
+    # QRコード履歴を表示（最初の7文字のみ、保存済みプレビューは色分け）
     y_offset = counter_y
     for i, qr_data in enumerate(reversed(qr_history[-MAX_HISTORY:])):
-        text_color = (255, 255, 255)
+        text_color = (255, 255, 255)  # デフォルト：白色
+        
+        # 管理番号部分を除去して元のQRコードデータを取得
+        original_qr_data = qr_data.split('] ', 1)[1] if '] ' in qr_data else qr_data
+        
+        # プレビュー保存状態をチェック
+        preview_saved = is_qr_preview_saved_in_csv(original_qr_data)
+        
         if qr_data in detected_qr_codes and (current_time - detected_qr_codes[qr_data]) < TIMEOUT:
             text_color = (255, 0, 0)  # 赤色：新しく検出されたQRコード
         elif i == current_history_index:
             text_color = (0, 255, 255)  # シアン色：現在選択中のQRコード
-        
-        # 管理番号部分を除去して元のQRコードデータを取得
-        original_qr_data = qr_data.split('] ', 1)[1] if '] ' in qr_data else qr_data
+        elif preview_saved:
+            text_color = (0, 255, 0)  # 緑色：プレビュー保存済み
         
         # Mac環境での文字化け対策
         processed_original_data = process_text_for_mac(original_qr_data)
@@ -699,8 +699,9 @@ while True:
         # 最初の7文字のみを表示
         short_content = processed_original_data[:7] + "..." if len(processed_original_data) > 7 else processed_original_data
         
-        # 番号付きで表示
-        display_text = f"{i+1}. {short_content}"
+        # 番号付きで表示（保存済みの場合はマークを追加）
+        status_mark = " ✓" if preview_saved else ""
+        display_text = f"{i+1}. {short_content}{status_mark}"
         history_font = get_appropriate_font(HISTORY_FONT_SIZE, display_text)
         output_frame = draw_text_with_outline(output_frame, display_text, (20, y_offset), history_font, text_color)
         y_offset += HISTORY_ENTRY_SPACING
@@ -787,20 +788,16 @@ while True:
     
     # プレビュー画像を保存（新しいQRコード検出時）
     
-    # 自動保存（QRコード検出時、pause_counterを増やさない）
+    # 自動保存（QRコード検出時、上の画像のみ保存、プレビューは手動保存）
     if auto_save_flag and detected_qr_positions:
-        print(f"自動保存を実行します: current_display_qr={current_display_qr}")
-        save_qr_detection_images(frame, detected_qr_positions, frame_count, output_frame, increment_pause=False, force_save_preview=False)
+        print(f"自動保存を実行します")
+        save_qr_detection_images(frame, detected_qr_positions, frame_count, output_frame, increment_pause=False, force_save_preview=False, save_preview=False)
         auto_save_flag = False  # フラグをリセット
-        print(f"QRコード検出により自動保存しました (Total: {save_counter} files)")
+        print(f"QRコード検出により自動保存しました (上の画像のみ) (Total: {save_counter} files)")
 
     # キー操作の処理
     key = cv2.waitKey(1) & 0xFF
-    if key == ord('s') or key == ord('S'):  # sキー：QRコード検出画像を保存
-        save_qr_detection_images(frame, detected_qr_positions, frame_count, output_frame, force_save_preview=True)
-        pause_counter += 1
-        print(f"QRコード検出画像を保存しました (Total: {save_counter} files)")
-    elif key == ord('1'):  # 1キー：履歴を順番に切り替え
+    if key == ord('1'):  # 1キー：履歴を順番に切り替え
         if qr_history:
             # 履歴を順番に切り替え（最新から古い順）
             current_history_index = (current_history_index + 1) % len(qr_history)
@@ -813,7 +810,15 @@ while True:
             print(f"履歴切り替え ({current_history_index + 1}/{len(qr_history)}): {selected_qr}")
         else:
             print("履歴がありません")
-    elif key == ord('2'):  # 2キー：現在表示中のURLをブラウザで開く
+    elif key == ord('2'):  # 2キー：内容プレビューを手動保存
+        if current_display_qr and detected_qr_positions:
+            print(f"2キー: 内容プレビューを手動保存します - {current_display_qr}")
+            save_qr_detection_images(frame, detected_qr_positions, frame_count, output_frame, increment_pause=True, force_save_preview=True, save_preview=True)
+            pause_counter += 1
+            print(f"内容プレビューを保存しました (Total: {save_counter} files)")
+        else:
+            print("保存するQRコードがありません。")
+    elif key == 13:  # エンターキー：現在表示中のURLをブラウザで開く
         if current_display_qr and current_display_qr.startswith(('http://', 'https://')):
             open_url_in_browser(current_display_qr)
         else:
