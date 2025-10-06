@@ -244,7 +244,9 @@ def save_qr_detection_images(frame, detected_qr_positions, frame_count, output_f
     # pause_counterを増加（自動保存時は増やさない）
     if increment_pause:
         pause_counter += 1
-        pause_sequence_counter += 1
+    
+    # pause_sequence_counterは常に増加（通し番号のため）
+    pause_sequence_counter += 1
     
     # ファイル名を生成（randoruto-wrs2.pyの命名規則に準拠）
     current_time = datetime.now()
