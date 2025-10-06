@@ -8,6 +8,8 @@ from PIL import Image, ImageDraw, ImageFont
 from datetime import datetime
 import requests
 import webbrowser
+import sys
+import unicodedata
 
 # QRコード履歴とトラッキング用辞書
 qr_history = []
@@ -22,9 +24,60 @@ CSV_FILE = "qr_history.csv"
 qr_contents = {}  # QRコードの内容を保存
 current_display_qr = None  # 現在表示中のQRコード
 
-# フォント設定（日本語・英語対応）
-FONT_PATH_JAPANESE = "C:/Windows/Fonts/meiryo.ttc"
-FONT_PATH_ENGLISH = "C:/Windows/Fonts/arial.ttf"
+# Mac環境での文字化け対策関数
+def process_text_for_mac(text):
+    """Mac環境での文字化け対策（完全対応）"""
+    if not text:
+        return ""
+    
+    try:
+        # 文字列を安全に処理
+        if isinstance(text, bytes):
+            # 複数のエンコーディングを試す
+            encodings = ['utf-8', 'utf-8-sig', 'shift_jis', 'cp932', 'euc-jp', 'iso-2022-jp', 'latin1', 'mac-roman']
+            for encoding in encodings:
+                try:
+                    text = text.decode(encoding)
+                    break
+                except (UnicodeDecodeError, LookupError):
+                    continue
+            else:
+                text = text.decode('utf-8', errors='replace')
+        
+        # 文字列を正規化
+        safe_text = str(text)
+        
+        # Mac環境での特殊処理
+        if sys.platform == 'darwin':
+            # Unicode正規化（Mac標準）
+            safe_text = unicodedata.normalize('NFC', safe_text)
+            
+            # 特殊文字の除去
+            safe_text = safe_text.replace('\ufeff', '')  # BOM除去
+            safe_text = safe_text.replace('\u200b', '')  # ゼロ幅スペース除去
+            safe_text = safe_text.replace('\u200c', '')  # ゼロ幅非結合子除去
+            safe_text = safe_text.replace('\u200d', '')  # ゼロ幅結合子除去
+            safe_text = safe_text.replace('\u2060', '')  # 単語結合子除去
+        
+        # 不正な文字を除去
+        safe_text = ''.join(char for char in safe_text if ord(char) < 0x110000 and ord(char) != 0xFFFD)
+        
+        # 最終的な安全なエンコード/デコード
+        safe_text = safe_text.encode('utf-8', errors='replace').decode('utf-8')
+        
+        return safe_text
+        
+    except Exception as e:
+        print(f"Mac文字処理エラー: {e}")
+        return str(text) if text else ""
+
+# フォント設定（Mac/Windows対応）
+if sys.platform == 'darwin':  # Mac環境
+    FONT_PATH_JAPANESE = "/System/Library/Fonts/Hiragino Sans GB.ttc"
+    FONT_PATH_ENGLISH = "/System/Library/Fonts/Helvetica.ttc"
+else:  # Windows環境
+    FONT_PATH_JAPANESE = "C:/Windows/Fonts/meiryo.ttc"
+    FONT_PATH_ENGLISH = "C:/Windows/Fonts/arial.ttf"
 
 # --- 保存用のカウンター ---
 save_counter = 0
@@ -277,29 +330,40 @@ def display_qr_history():
         print(df.to_string(index=False))
 
 def get_appropriate_font(size, text=""):
-    """テキストに適したフォントを取得（Mac対応日本語・英語・記号対応）"""
+    """テキストに適したフォントを取得（Mac完全対応）"""
     try:
-        import sys
-        
-        # Mac環境でのフォントパス設定
+        # Mac環境での完全なフォント対応
         if sys.platform == 'darwin':  # Mac環境
-            mac_fonts = [
-                "/System/Library/Fonts/Hiragino Sans GB.ttc",  # Mac標準日本語フォント
+            # Mac環境でのフォントパス設定（優先順位付き）
+            mac_japanese_fonts = [
+                "/System/Library/Fonts/Hiragino Sans GB.ttc",  # Mac標準日本語フォント（最優先）
                 "/System/Library/Fonts/Hiragino Sans.ttc",     # Mac標準日本語フォント
+                "/System/Library/Fonts/Hiragino Kaku Gothic ProN.ttc",  # Mac日本語フォント
+                "/System/Library/Fonts/Hiragino Mincho ProN.ttc",       # Mac日本語フォント
+                "/System/Library/Fonts/Yu Gothic Medium.otf",           # Mac日本語フォント
+                "/System/Library/Fonts/Yu Gothic Bold.otf",             # Mac日本語フォント
                 "/System/Library/Fonts/Arial Unicode MS.ttf",  # Mac Unicodeフォント
                 "/Library/Fonts/Arial Unicode MS.ttf",         # Mac Unicodeフォント
+            ]
+            
+            mac_english_fonts = [
                 "/System/Library/Fonts/Helvetica.ttc",         # Mac標準フォント
+                "/System/Library/Fonts/Arial.ttf",             # Mac Arialフォント
+                "/System/Library/Fonts/Times.ttc",             # Mac Timesフォント
             ]
         else:
-            mac_fonts = []
+            mac_japanese_fonts = []
+            mac_english_fonts = []
         
-        # 日本語文字が含まれているかチェック（より包括的に）
+        # 日本語文字が含まれているかチェック（完全対応）
         has_japanese = any(
             '\u3040' <= char <= '\u309F' or  # ひらがな
             '\u30A0' <= char <= '\u30FF' or  # カタカナ
             '\u4E00' <= char <= '\u9FAF' or  # 漢字
             '\uFF00' <= char <= '\uFFEF' or  # 全角文字
-            '\u3000' <= char <= '\u303F'     # CJK記号・句読点
+            '\u3000' <= char <= '\u303F' or  # CJK記号・句読点
+            '\u3400' <= char <= '\u4DBF' or  # CJK拡張A
+            '\u20000' <= char <= '\u2A6DF'   # CJK拡張B
             for char in text
         )
         
@@ -311,12 +375,13 @@ def get_appropriate_font(size, text=""):
         )
         
         if has_japanese or has_special_chars:
-            # Mac環境ではMac用フォントを優先
+            # Mac環境ではMac用日本語フォントを優先
             if sys.platform == 'darwin':
-                for font_path in mac_fonts:
+                for font_path in mac_japanese_fonts:
                     try:
                         return ImageFont.truetype(font_path, size)
-                    except:
+                    except Exception as e:
+                        print(f"Mac日本語フォント読み込み失敗: {font_path}, エラー: {e}")
                         continue
             
             # Windows環境またはMac用フォントが失敗した場合
@@ -326,6 +391,13 @@ def get_appropriate_font(size, text=""):
                 return ImageFont.load_default()
         else:
             # 英語フォントを試す
+            if sys.platform == 'darwin':
+                for font_path in mac_english_fonts:
+                    try:
+                        return ImageFont.truetype(font_path, size)
+                    except:
+                        continue
+            
             try:
                 return ImageFont.truetype(FONT_PATH_ENGLISH, size)
             except:
@@ -338,45 +410,10 @@ def get_appropriate_font(size, text=""):
         return ImageFont.load_default()
 
 def draw_text_with_outline(img, text, position, font, text_color, outline_color=(0, 0, 0)):
-    """文字を見やすくするために黒縁を適度に細くし、白字を適度に強調（Mac対応文字化け対策強化）"""
+    """文字を見やすくするために黒縁を適度に細くし、白字を適度に強調（Mac完全対応）"""
     try:
-        # テキストの文字エンコーディングを確認・修正（Mac対応強化）
-        if isinstance(text, bytes):
-            # Mac環境での文字化け対策
-            encodings_to_try = ['utf-8', 'utf-8-sig', 'shift_jis', 'cp932', 'euc-jp', 'iso-2022-jp', 'latin1']
-            for encoding in encodings_to_try:
-                try:
-                    text = text.decode(encoding)
-                    break
-                except (UnicodeDecodeError, LookupError):
-                    continue
-            else:
-                # 全てのエンコーディングが失敗した場合
-                text = text.decode('utf-8', errors='replace')
-        
-        # 文字列を安全に処理（Mac/Windows両対応強化）
-        safe_text = str(text)
-        
-        # Mac環境での特殊文字処理
-        import sys
-        if sys.platform == 'darwin':  # Mac環境
-            # Mac環境での文字化け対策
-            try:
-                # 文字列を正規化
-                import unicodedata
-                safe_text = unicodedata.normalize('NFC', safe_text)
-            except:
-                pass
-        
-        # 不正な文字を除去（Mac対応）
-        safe_text = ''.join(char for char in safe_text if ord(char) < 0x110000 and ord(char) != 0xFFFD)
-        
-        # UTF-8で安全にエンコード/デコード（Mac対応）
-        try:
-            safe_text = safe_text.encode('utf-8', errors='replace').decode('utf-8')
-        except:
-            # 最終的なフォールバック
-            safe_text = safe_text.encode('ascii', errors='replace').decode('ascii')
+        # Mac環境での完全な文字化け対策
+        safe_text = process_text_for_mac(text)
         
         pil_img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
         draw = ImageDraw.Draw(pil_img)
@@ -430,9 +467,10 @@ def detect_qr_code(frame):
                     if is_new_qr:
                         qr_manager[qr_data] = qr_counter
                         save_qr_to_csv(qr_counter, qr_data, current_time)
-                        # QRコード内容情報を取得・保存
-                        qr_contents[qr_data] = get_qr_content_info(qr_data)
-                        qr_counter += 1
+                    # QRコード内容情報を取得・保存（Mac対応）
+                    processed_qr_data = process_text_for_mac(qr_data)
+                    qr_contents[processed_qr_data] = get_qr_content_info(processed_qr_data)
+                    qr_counter += 1
                         
                         # URLの場合は自動的にブラウザで開かない（手動で'o'キーを押す必要がある）
                     
@@ -580,8 +618,11 @@ while True:
         # 管理番号部分を除去して元のQRコードデータを取得
         original_qr_data = qr_data.split('] ', 1)[1] if '] ' in qr_data else qr_data
         
+        # Mac環境での文字化け対策
+        processed_original_data = process_text_for_mac(original_qr_data)
+        
         # 最初の7文字のみを表示
-        short_content = original_qr_data[:7] + "..." if len(original_qr_data) > 7 else original_qr_data
+        short_content = processed_original_data[:7] + "..." if len(processed_original_data) > 7 else processed_original_data
         
         # 番号付きで表示
         display_text = f"{i+1}. {short_content}"
@@ -608,8 +649,8 @@ while True:
         output_frame = draw_text_with_outline(output_frame, title_text, (LEFT_VIDEO_WIDTH + 20, content_y), title_font, (255, 255, 255))
         content_y += CONTENT_LINE_SPACING + 15
         
-        # 内容テキスト（右側全体を活用してフル表示、vCard/JSON対応）
-        content_text = content_info['content']
+        # 内容テキスト（右側全体を活用してフル表示、vCard/JSON対応、Mac対応）
+        content_text = process_text_for_mac(content_info['content'])
         
         # vCardやJSONの場合は改行を考慮した処理
         if content_text.startswith('BEGIN:VCARD') or content_text.startswith('{') or content_text.startswith('['):
@@ -652,8 +693,8 @@ while True:
         output_frame = draw_text_with_outline(output_frame, "内容を取得中...", (LEFT_VIDEO_WIDTH + 20, content_y), fallback_loading_font, (255, 255, 0))
         content_y += CONTENT_LINE_SPACING + 15
         
-        # 内容を複数行に分割して表示（vCard/JSON対応）
-        fallback_content = current_display_qr
+        # 内容を複数行に分割して表示（vCard/JSON対応、Mac対応）
+        fallback_content = process_text_for_mac(current_display_qr)
         if len(fallback_content) > 40:
             fallback_lines = [fallback_content[i:i+40] for i in range(0, len(fallback_content), 40)]
             for line in fallback_lines:
