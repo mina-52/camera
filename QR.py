@@ -419,14 +419,13 @@ def detect_qr_code(frame):
         if retval and decoded_info is not None:
             for i, qr_data in enumerate(decoded_info):
                 if qr_data:  # 空でない場合
-                    is_new_qr = qr_data not in qr_manager
-                    if is_new_qr:
-                        qr_manager[qr_data] = qr_counter
-                        save_qr_to_csv(qr_counter, qr_data, current_time)
+                    # システム起動時に1から再スタート（既存のQRコードに関係なく）
+                    qr_manager[qr_data] = qr_counter
+                    save_qr_to_csv(qr_counter, qr_data, current_time)
+                    qr_counter += 1
                     # QRコード内容情報を取得・保存（Mac対応）
                     processed_qr_data = process_text_for_mac(qr_data)
                     qr_contents[processed_qr_data] = get_qr_content_info(processed_qr_data)
-                    qr_counter += 1
                         
                         # URLの場合は自動的にブラウザで開かない（手動で'o'キーを押す必要がある）
                     
@@ -439,7 +438,7 @@ def detect_qr_code(frame):
                     current_history_index = 0  # 新しいQRコード検出時は履歴インデックスをリセット
                     
                     # 新しいQRコードの場合は自動保存フラグを設定（一度だけ保存）
-                    if is_new_qr and qr_data not in saved_qr_codes:
+                    if qr_data not in saved_qr_codes:
                         # 自動保存フラグを設定
                         global auto_save_flag
                         auto_save_flag = True
