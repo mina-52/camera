@@ -110,6 +110,10 @@ LEFT_VIDEO_HEIGHT = WINDOW_HEIGHT
 RIGHT_PREVIEW_WIDTH = WINDOW_WIDTH // 2
 RIGHT_PREVIEW_HEIGHT = WINDOW_HEIGHT
 
+# 右側レイアウトの分割
+RIGHT_CONTENT_HEIGHT = RIGHT_PREVIEW_HEIGHT // 2  # 上部：内容プレビュー
+RIGHT_IMAGE_HEIGHT = RIGHT_PREVIEW_HEIGHT // 2    # 下部：対応する左上画像
+
 # 履歴表示エリア（左側の下部）
 HISTORY_AREA_HEIGHT = int(LEFT_VIDEO_HEIGHT * 0.3)  # 左側の30%の高さ
 VIDEO_AREA_HEIGHT = LEFT_VIDEO_HEIGHT - HISTORY_AREA_HEIGHT  # 残りの高さを動画に
@@ -246,6 +250,58 @@ def open_url_in_browser(url):
     except Exception as e:
         print(f"URLを開くのに失敗しました: {e}")
         return False
+
+def find_corresponding_left_image(qr_data):
+    """現在のQRコードに対応する左上画像（左側動画）を検索して読み込む"""
+    if not qr_data or not os.path.exists(session_folder):
+        return None
+    
+    try:
+        # QRコードの管理番号を取得
+        qr_number = qr_manager.get(qr_data, None)
+        if qr_number is None:
+            return None
+        
+        # セッションフォルダー内のファイルを検索
+        for filename in os.listdir(session_folder):
+            if "_M_left_video.jpg" in filename:
+                # ファイル名からQR番号を推測（ファイル名に含まれる可能性）
+                # より確実な方法として、CSVファイルの情報を使用
+                try:
+                    # CSVファイルから該当するQRコードの検出時刻を取得
+                    if os.path.exists(CSV_FILE):
+                        with open(CSV_FILE, 'r', encoding='utf-8') as file:
+                            reader = csv.reader(file)
+                            next(reader, None)  # ヘッダーをスキップ
+                            
+                            for row in reader:
+                                if len(row) >= 3 and row[0] == str(qr_number):
+                                    # 該当するQRコードの検出時刻を取得
+                                    detection_time = row[2]
+                                    # ファイル名に時刻が含まれているかチェック
+                                    if detection_time.replace('-', '').replace(' ', '').replace(':', '') in filename:
+                                        # 対応する画像ファイルを読み込み
+                                        filepath = os.path.join(session_folder, filename)
+                                        image = cv2.imread(filepath)
+                                        if image is not None:
+                                            return image
+                except Exception as e:
+                    print(f"CSVファイル読み込みエラー: {e}")
+                    continue
+        
+        # 見つからない場合は、最新の左側動画画像を返す
+        left_video_files = [f for f in os.listdir(session_folder) if "_M_left_video.jpg" in f]
+        if left_video_files:
+            # 最新のファイルを選択
+            latest_file = sorted(left_video_files)[-1]
+            filepath = os.path.join(session_folder, latest_file)
+            image = cv2.imread(filepath)
+            return image
+        
+        return None
+    except Exception as e:
+        print(f"対応画像検索エラー: {e}")
+        return None
 
 
 def get_qr_content_info(qr_data):
@@ -713,8 +769,11 @@ while True:
         output_frame = draw_text_with_outline(output_frame, display_text, (20, y_offset), history_font, text_color)
         y_offset += HISTORY_ENTRY_SPACING
     
-    # 右側：内容プレビューエリア（大きく）
-    cv2.rectangle(output_frame, (LEFT_VIDEO_WIDTH, 0), (WINDOW_WIDTH, WINDOW_HEIGHT), (40, 40, 40), -1)
+    # 右側：上部エリア（内容プレビュー）
+    cv2.rectangle(output_frame, (LEFT_VIDEO_WIDTH, 0), (WINDOW_WIDTH, RIGHT_CONTENT_HEIGHT), (40, 40, 40), -1)
+    
+    # 右側：下部エリア（対応する左上画像）
+    cv2.rectangle(output_frame, (LEFT_VIDEO_WIDTH, RIGHT_CONTENT_HEIGHT), (WINDOW_WIDTH, WINDOW_HEIGHT), (20, 20, 20), -1)
     
     # 最新検出のQRコードを自動表示（選択されていない場合）
     if not current_display_qr and qr_history:
@@ -756,7 +815,7 @@ while True:
         
         # フル表示（省略なし、vCard/JSON対応）
         for line in lines:
-            if content_y < WINDOW_HEIGHT - 80:  # 画面からはみ出さないように制限（余裕を持たせる）
+            if content_y < RIGHT_CONTENT_HEIGHT - 80:  # 上部エリアからはみ出さないように制限
                 line_font = get_appropriate_font(CONTENT_FONT_SIZE, line)
                 output_frame = draw_text_with_outline(output_frame, line, (LEFT_VIDEO_WIDTH + 20, content_y), line_font, (255, 255, 255))
                 content_y += CONTENT_LINE_SPACING + 5  # vCard/JSONの複雑な構造に対応して余裕を持たせる
@@ -781,7 +840,7 @@ while True:
         if len(fallback_content) > 40:
             fallback_lines = [fallback_content[i:i+40] for i in range(0, len(fallback_content), 40)]
             for line in fallback_lines:
-                if content_y < WINDOW_HEIGHT - 80:
+                if content_y < RIGHT_CONTENT_HEIGHT - 80:  # 上部エリアからはみ出さないように制限
                     fallback_content_font = get_appropriate_font(CONTENT_FONT_SIZE, line)
                     output_frame = draw_text_with_outline(output_frame, line, (LEFT_VIDEO_WIDTH + 20, content_y), fallback_content_font, (255, 255, 255))
                     content_y += CONTENT_LINE_SPACING + 5
@@ -790,6 +849,48 @@ while True:
         else:
             fallback_content_font = get_appropriate_font(CONTENT_FONT_SIZE, fallback_content)
             output_frame = draw_text_with_outline(output_frame, fallback_content, (LEFT_VIDEO_WIDTH + 20, content_y), fallback_content_font, (255, 255, 255))
+    
+    # 下部エリア：対応する左上画像を表示
+    if current_display_qr:
+        corresponding_image = find_corresponding_left_image(current_display_qr)
+        if corresponding_image is not None:
+            # 画像を下部エリアのサイズにリサイズ
+            target_width = RIGHT_PREVIEW_WIDTH
+            target_height = RIGHT_IMAGE_HEIGHT
+            
+            # アスペクト比を保持してリサイズ
+            h, w = corresponding_image.shape[:2]
+            aspect_ratio = w / h
+            
+            if aspect_ratio > target_width / target_height:
+                # 幅に合わせる
+                new_width = target_width
+                new_height = int(target_width / aspect_ratio)
+            else:
+                # 高さに合わせる
+                new_height = target_height
+                new_width = int(target_height * aspect_ratio)
+            
+            resized_image = cv2.resize(corresponding_image, (new_width, new_height))
+            
+            # 中央に配置
+            start_x = LEFT_VIDEO_WIDTH + (target_width - new_width) // 2
+            start_y = RIGHT_CONTENT_HEIGHT + (target_height - new_height) // 2
+            
+            # 画像を配置
+            output_frame[start_y:start_y + new_height, start_x:start_x + new_width] = resized_image
+            
+            # 画像タイトルを表示
+            title_y = RIGHT_CONTENT_HEIGHT + 10
+            title_text = f"QR#{qr_manager.get(current_display_qr, '?')} 対応画像"
+            title_font = get_appropriate_font(16, title_text)
+            output_frame = draw_text_with_outline(output_frame, title_text, (LEFT_VIDEO_WIDTH + 10, title_y), title_font, (255, 255, 255))
+        else:
+            # 画像が見つからない場合のメッセージ
+            no_image_y = RIGHT_CONTENT_HEIGHT + RIGHT_IMAGE_HEIGHT // 2
+            no_image_text = "対応する画像が見つかりません"
+            no_image_font = get_appropriate_font(20, no_image_text)
+            output_frame = draw_text_with_outline(output_frame, no_image_text, (LEFT_VIDEO_WIDTH + 50, no_image_y), no_image_font, (128, 128, 128))
     
     cv2.imshow("QRコードトラッキング", output_frame)
     
