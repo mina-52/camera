@@ -679,7 +679,9 @@ while True:
     
     # QRコード履歴を表示（最初の7文字のみ、保存済みプレビューは色分け）
     y_offset = counter_y
-    for i, qr_data in enumerate(reversed(qr_history[-MAX_HISTORY:])):
+    display_history = reversed(qr_history[-MAX_HISTORY:])  # 最新から古い順で表示
+    
+    for i, qr_data in enumerate(display_history):
         text_color = (255, 255, 255)  # デフォルト：白色
         
         # 管理番号部分を除去して元のQRコードデータを取得
@@ -688,9 +690,12 @@ while True:
         # プレビュー保存状態をチェック
         preview_saved = is_qr_preview_saved_in_csv(original_qr_data)
         
+        # カーソル位置の判定：現在表示中のQRコードと同じかチェック
+        is_current_display = (current_display_qr and original_qr_data == current_display_qr)
+        
         if qr_data in detected_qr_codes and (current_time - detected_qr_codes[qr_data]) < TIMEOUT:
             text_color = (255, 0, 0)  # 赤色：新しく検出されたQRコード
-        elif i == current_history_index:
+        elif is_current_display:
             text_color = (0, 255, 255)  # シアン色：現在選択中のQRコード
         elif preview_saved:
             text_color = (0, 255, 0)  # 緑色：プレビュー保存済み
@@ -803,14 +808,27 @@ while True:
         print(f"1キーが押されました。")
         if qr_history:
             # 履歴を順番に切り替え（最新から古い順）
-            current_history_index = (current_history_index + 1) % len(qr_history)
-            selected_qr = qr_history[-(current_history_index + 1)]
-            # 管理番号部分を除去して元のQRコードデータを取得
+            # 現在表示中のQRコードのインデックスを取得
+            current_index = -1
+            if current_display_qr:
+                for i, qr_data in enumerate(qr_history):
+                    original_qr_data = qr_data.split('] ', 1)[1] if '] ' in qr_data else qr_data
+                    if original_qr_data == current_display_qr:
+                        current_index = i
+                        break
+            
+            # 次の履歴に移動（循環）
+            if current_index >= 0:
+                next_index = (current_index + 1) % len(qr_history)
+            else:
+                next_index = 0  # 現在のQRコードが見つからない場合は最初から
+            
+            # 次のQRコードを選択
+            selected_qr = qr_history[next_index]
             original_qr_data = selected_qr.split('] ', 1)[1] if '] ' in selected_qr else selected_qr
             current_display_qr = original_qr_data
-            # 履歴切り替え時は内容プレビューの保存済みフラグをリセット（再保存可能にする）
-            # CSVベースの管理では、強制保存オプションを使用して再保存を可能にする
-            print(f"履歴切り替え ({current_history_index + 1}/{len(qr_history)}): {selected_qr}")
+            
+            print(f"履歴切り替え ({next_index + 1}/{len(qr_history)}): {selected_qr}")
         else:
             print("履歴がありません")
     elif key == ord('2'):  # 2キー：内容プレビューを手動保存
@@ -846,13 +864,13 @@ while True:
     elif key >= ord('3') and key <= ord('9'):  # 3-9キー：履歴から直接選択
         selected_index = key - ord('3')  # 3キーは0番目、4キーは1番目...
         if 0 <= selected_index < len(qr_history):
-            selected_qr = qr_history[-(selected_index+1)]
+            # 履歴を逆順で表示しているため、インデックスを調整
+            actual_index = len(qr_history) - 1 - selected_index
+            selected_qr = qr_history[actual_index]
             # 管理番号部分を除去して元のQRコードデータを取得
             original_qr_data = selected_qr.split('] ', 1)[1] if '] ' in selected_qr else selected_qr
             current_display_qr = original_qr_data
-            current_history_index = selected_index  # インデックスを更新
-            # 直接選択時も内容プレビューの保存済みフラグをリセット（再保存可能にする）
-            # CSVベースの管理では、強制保存オプションを使用して再保存を可能にする
+            
             print(f"直接選択 ({selected_index + 1}/{len(qr_history)}): {selected_qr}")
     elif key == ord('q') or key == ord('Q'):  # qキー：終了
         print(f"qキーが押されました。プログラムを終了します。")
