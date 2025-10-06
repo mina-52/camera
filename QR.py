@@ -906,7 +906,21 @@ while True:
     
     # 下部エリア：対応する左上画像を表示
     if current_display_qr:
-        corresponding_image = find_corresponding_left_image(current_display_qr)
+        # リアルタイム認識時（QRコードが検出中）は現在のフレームを表示
+        is_currently_detected = False
+        for qr_data, rect in detected_qr_positions.items():
+            original_qr_data = qr_data.split('] ', 1)[1] if '] ' in qr_data else qr_data
+            if original_qr_data == current_display_qr:
+                is_currently_detected = True
+                break
+        
+        if is_currently_detected:
+            # リアルタイム認識時は現在のフレームの左側部分を表示
+            corresponding_image = frame[0:VIDEO_AREA_HEIGHT, 0:LEFT_VIDEO_WIDTH]
+        else:
+            # 履歴選択時は保存された画像を検索
+            corresponding_image = find_corresponding_left_image(current_display_qr)
+        
         if corresponding_image is not None:
             # 画像を下部エリアのサイズにリサイズ
             target_width = RIGHT_PREVIEW_WIDTH
@@ -936,9 +950,14 @@ while True:
             
             # 画像タイトルを表示
             title_y = RIGHT_CONTENT_HEIGHT + 10
-            title_text = f"QR#{qr_manager.get(current_display_qr, '?')} 対応画像"
+            if is_currently_detected:
+                title_text = f"QR#{qr_manager.get(current_display_qr, '?')} リアルタイム表示"
+                title_color = (0, 255, 255)  # シアン色でリアルタイム表示を強調
+            else:
+                title_text = f"QR#{qr_manager.get(current_display_qr, '?')} 対応画像"
+                title_color = (255, 255, 255)  # 白色で通常表示
             title_font = get_appropriate_font(16, title_text)
-            output_frame = draw_text_with_outline(output_frame, title_text, (LEFT_VIDEO_WIDTH + 10, title_y), title_font, (255, 255, 255))
+            output_frame = draw_text_with_outline(output_frame, title_text, (LEFT_VIDEO_WIDTH + 10, title_y), title_font, title_color)
             
         else:
             # 画像が見つからない場合のメッセージ
