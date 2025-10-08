@@ -719,9 +719,8 @@ os.makedirs(session_folder)
 print(f"セッションフォルダーを作成しました: {session_folder}")
 
 cv2.namedWindow("QRコードトラッキング", cv2.WINDOW_NORMAL)
-cv2.resizeWindow("QRコードトラッキング", WINDOW_WIDTH, WINDOW_HEIGHT)
-# ウィンドウを画面の左上（正面）に配置
-cv2.moveWindow("QRコードトラッキング", 0, 0)
+# 全画面表示に設定（どんなスクリーンでも対応）
+cv2.setWindowProperty("QRコードトラッキング", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
 # フレームカウンター
 frame_count = 0
@@ -794,25 +793,9 @@ while True:
     
     # QRコード履歴を表示（最初の7文字のみ、保存済みプレビューは色分け）
     y_offset = counter_y
-    display_history = list(reversed(qr_history[-MAX_HISTORY:]))  # 最新から古い順で表示
-    
-    # 動的にスペーシングを調整して画面から見切れないようにする
-    available_height = WINDOW_HEIGHT - counter_y - 20  # 残りの高さ（下部のマージンを含む）
-    num_history_items = len(display_history)
-    
-    if num_history_items > 0:
-        # 履歴アイテムの数に応じて動的にスペーシングを計算
-        dynamic_spacing = min(HISTORY_ENTRY_SPACING, available_height // num_history_items)
-        # 最小スペーシングを25pxに設定（文字が重ならないように）
-        dynamic_spacing = max(dynamic_spacing, 25)
-    else:
-        dynamic_spacing = HISTORY_ENTRY_SPACING
+    display_history = reversed(qr_history[-MAX_HISTORY:])  # 最新から古い順で表示
     
     for i, qr_data in enumerate(display_history):
-        # 画面からはみ出す場合はスキップ
-        if y_offset + dynamic_spacing > WINDOW_HEIGHT - 10:
-            break
-        
         text_color = (255, 255, 255)  # デフォルト：白色
         
         # 管理番号部分を除去して元のQRコードデータを取得
@@ -842,7 +825,7 @@ while True:
         display_text = f"{i+1}. {short_content}{status_mark}"
         history_font = get_appropriate_font(HISTORY_FONT_SIZE, display_text)
         output_frame = draw_text_with_outline(output_frame, display_text, (20, y_offset), history_font, text_color)
-        y_offset += dynamic_spacing
+        y_offset += HISTORY_ENTRY_SPACING
     
     # 右側：上部エリア（内容プレビュー）
     cv2.rectangle(output_frame, (LEFT_VIDEO_WIDTH, 0), (WINDOW_WIDTH, RIGHT_CONTENT_HEIGHT), (40, 40, 40), -1)
