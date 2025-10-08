@@ -15,7 +15,7 @@ class ScriptManager:
         self.scripts = {
             'w': 'randoruto-wrs2.py',
             'e': 'QR.py',
-            'r': 'randoruto-number-sub2.py'
+            'r': 'randoruto-wrs3.py'
         }
         self.running = True
         # Mac用のターミナル設定保存
