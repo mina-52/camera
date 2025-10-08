@@ -4,10 +4,10 @@ import os
 import signal
 import time
 import threading
-import termios  # Mac/Unixのキーボード入力用
-import tty
 import select
-#test
+import tty
+import termios
+
 class ScriptManager:
     def __init__(self):
         self.current_process = None
@@ -18,25 +18,34 @@ class ScriptManager:
             'r': 'randoruto-number-sub2.py'
         }
         self.running = True
+        # Mac用のターミナル設定保存
         self.old_settings = None
-    
+
     def setup_terminal(self):
-        """端末を非正規モードに設定（Mac/Unix用）"""
-        self.old_settings = termios.tcgetattr(sys.stdin)
-        tty.setcbreak(sys.stdin.fileno())
-    
+        """Mac用のターミナル設定"""
+        try:
+            self.old_settings = termios.tcgetattr(sys.stdin)
+            tty.setraw(sys.stdin.fileno())
+        except:
+            pass
+
     def restore_terminal(self):
-        """端末設定を元に戻す（Mac/Unix用）"""
-        if self.old_settings:
-            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.old_settings)
-    
-    def kbhit(self):
-        """キーが押されたかチェック（Mac/Unix用）"""
-        return select.select([sys.stdin], [], [], 0)[0] != []
-    
-    def getch(self):
-        """キーを1文字取得（Mac/Unix用）"""
-        return sys.stdin.read(1)
+        """Mac用のターミナル設定を復元"""
+        try:
+            if self.old_settings:
+                termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.old_settings)
+        except:
+            pass
+
+    def get_key_mac(self):
+        """Mac用のキーボード入力取得"""
+        try:
+            if select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], []):
+                key = sys.stdin.read(1)
+                return key.lower()
+        except:
+            pass
+        return None
 
     def stop_current_script(self):
         """現在実行中のスクリプトを停止"""
@@ -151,18 +160,18 @@ class ScriptManager:
         print("w/e/rキーでスクリプトを切り替え、'q'で終了します")
         print("(Enterキーは不要です)")
         
-        # 端末設定を変更
+        # Mac用のターミナル設定
         self.setup_terminal()
         
+        self.show_menu()
+        
         try:
-            self.show_menu()
-            
             while self.running:
                 try:
-                    # キー入力を待つ（Enterキー不要）
-                    if self.kbhit():
-                        choice = self.getch().lower()
-                        
+                    # Mac用のキー入力処理
+                    choice = self.get_key_mac()
+                    
+                    if choice:
                         print(f"\n押されたキー: {choice}")
                         
                         if choice == 'q':
@@ -187,7 +196,7 @@ class ScriptManager:
                     print(f"エラーが発生しました: {e}")
                     time.sleep(1)
         finally:
-            # 端末設定を復元
+            # ターミナル設定を復元
             self.restore_terminal()
 
 def main():
@@ -197,6 +206,7 @@ def main():
     except Exception as e:
         print(f"予期しないエラーが発生しました: {e}")
     finally:
+        # ターミナル設定を確実に復元
         manager.restore_terminal()
         print("スクリプト切り替えシステムを終了しました")
 
