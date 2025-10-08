@@ -4,7 +4,9 @@ import os
 import signal
 import time
 import threading
-import msvcrt  # Windowsのキーボード入力用
+import termios  # Mac/Unixのキーボード入力用
+import tty
+import select
 
 class ScriptManager:
     def __init__(self):
@@ -16,6 +18,25 @@ class ScriptManager:
             'r': 'randoruto-number-sub2.py'
         }
         self.running = True
+        self.old_settings = None
+    
+    def setup_terminal(self):
+        """端末を非正規モードに設定（Mac/Unix用）"""
+        self.old_settings = termios.tcgetattr(sys.stdin)
+        tty.setcbreak(sys.stdin.fileno())
+    
+    def restore_terminal(self):
+        """端末設定を元に戻す（Mac/Unix用）"""
+        if self.old_settings:
+            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.old_settings)
+    
+    def kbhit(self):
+        """キーが押されたかチェック（Mac/Unix用）"""
+        return select.select([sys.stdin], [], [], 0)[0] != []
+    
+    def getch(self):
+        """キーを1文字取得（Mac/Unix用）"""
+        return sys.stdin.read(1)
 
     def stop_current_script(self):
         """現在実行中のスクリプトを停止"""
@@ -130,43 +151,44 @@ class ScriptManager:
         print("w/e/rキーでスクリプトを切り替え、'q'で終了します")
         print("(Enterキーは不要です)")
         
-        self.show_menu()
+        # 端末設定を変更
+        self.setup_terminal()
         
-        while self.running:
-            try:
-                # キー入力を待つ（Enterキー不要）
-                if msvcrt.kbhit():
-                    key = msvcrt.getch()
+        try:
+            self.show_menu()
+            
+            while self.running:
+                try:
+                    # キー入力を待つ（Enterキー不要）
+                    if self.kbhit():
+                        choice = self.getch().lower()
+                        
+                        print(f"\n押されたキー: {choice}")
+                        
+                        if choice == 'q':
+                            print("\n終了中...")
+                            self.stop_current_script()
+                            self.running = False
+                            break
+                        elif choice in self.scripts:
+                            self.switch_script(choice)
+                            self.show_menu()
+                        else:
+                            print("無効な選択です。w, e, r, またはqを入力してください")
                     
-                    # バイト列を文字列に変換
-                    try:
-                        choice = key.decode('utf-8').lower()
-                    except:
-                        choice = key.decode('cp932').lower()
+                    time.sleep(0.1)  # CPU使用率を抑えるための短い待機
                     
-                    print(f"\n押されたキー: {choice}")
-                    
-                    if choice == 'q':
-                        print("\n終了中...")
-                        self.stop_current_script()
-                        self.running = False
-                        break
-                    elif choice in self.scripts:
-                        self.switch_script(choice)
-                        self.show_menu()
-                    else:
-                        print("無効な選択です。w, e, r, またはqを入力してください")
-                
-                time.sleep(0.1)  # CPU使用率を抑えるための短い待機
-                
-            except KeyboardInterrupt:
-                print("\n\nCtrl+Cが押されました。終了中...")
-                self.stop_current_script()
-                self.running = False
-                break
-            except Exception as e:
-                print(f"エラーが発生しました: {e}")
-                time.sleep(1)
+                except KeyboardInterrupt:
+                    print("\n\nCtrl+Cが押されました。終了中...")
+                    self.stop_current_script()
+                    self.running = False
+                    break
+                except Exception as e:
+                    print(f"エラーが発生しました: {e}")
+                    time.sleep(1)
+        finally:
+            # 端末設定を復元
+            self.restore_terminal()
 
 def main():
     manager = ScriptManager()
@@ -175,6 +197,7 @@ def main():
     except Exception as e:
         print(f"予期しないエラーが発生しました: {e}")
     finally:
+        manager.restore_terminal()
         print("スクリプト切り替えシステムを終了しました")
 
 if __name__ == "__main__":
