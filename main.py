@@ -10,11 +10,9 @@ class ScriptManager:
         self.current_process = None
         self.current_script = None
         self.scripts = {
-            '1': 'randoruto-number.py',
-            '2': 'randoruto.py',
-            '3': 'sabi-obs.py',
-            '4': 'kikenbutu.py',
-            '5': 'drone_detection copy.py'
+            'w': 'randoruto-wrs2.py',
+            'e': 'QR.py',
+            'r': 'randoruto-number-sub2.py'
         }
         self.running = True
 
@@ -128,13 +126,13 @@ class ScriptManager:
     def run(self):
         """メインループ"""
         print("スクリプト切り替えシステムを開始しました")
-        print("数字キーでスクリプトを切り替え、'q'で終了します")
+        print("w/e/rキーでスクリプトを切り替え、'q'で終了します")
         
         while self.running:
             self.show_menu()
             
             try:
-                choice = input("\n選択してください (1-5, q): ").strip().lower()
+                choice = input("\n選択してください (w, e, r, q): ").strip().lower()
                 
                 if choice == 'q':
                     print("\n終了中...")
@@ -144,7 +142,7 @@ class ScriptManager:
                 elif choice in self.scripts:
                     self.switch_script(choice)
                 else:
-                    print("無効な選択です。1-5またはqを入力してください")
+                    print("無効な選択です。w, e, r, またはqを入力してください")
                 
                 time.sleep(1)  # 少し待機
                 

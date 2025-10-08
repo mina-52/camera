@@ -720,6 +720,8 @@ print(f"セッションフォルダーを作成しました: {session_folder}")
 
 cv2.namedWindow("QRコードトラッキング", cv2.WINDOW_NORMAL)
 cv2.resizeWindow("QRコードトラッキング", WINDOW_WIDTH, WINDOW_HEIGHT)
+# ウィンドウを画面の左上（正面）に配置
+cv2.moveWindow("QRコードトラッキング", 0, 0)
 
 # フレームカウンター
 frame_count = 0
