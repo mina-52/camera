@@ -25,26 +25,34 @@ class ScriptManager:
         """Mac用のターミナル設定"""
         try:
             self.old_settings = termios.tcgetattr(sys.stdin)
-            tty.setraw(sys.stdin.fileno())
-        except:
-            pass
+            tty.setcbreak(sys.stdin.fileno())
+            print("ターミナル設定を変更しました")
+        except Exception as e:
+            print(f"ターミナル設定エラー: {e}")
 
     def restore_terminal(self):
         """Mac用のターミナル設定を復元"""
         try:
             if self.old_settings:
                 termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.old_settings)
-        except:
-            pass
+                print("\nターミナル設定を復元しました")
+        except Exception as e:
+            print(f"ターミナル復元エラー: {e}")
 
     def get_key_mac(self):
-        """Mac用のキーボード入力取得"""
+        """Mac用のキーボード入力取得（ノンブロッキング）"""
         try:
-            if select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], []):
+            # selectでキー入力があるかチェック（タイムアウト0秒）
+            if select.select([sys.stdin], [], [], 0.0)[0]:
                 key = sys.stdin.read(1)
+                # Ctrl+Cの場合
+                if ord(key) == 3:
+                    raise KeyboardInterrupt
                 return key.lower()
-        except:
-            pass
+        except KeyboardInterrupt:
+            raise
+        except Exception as e:
+            print(f"キー入力エラー: {e}")
         return None
 
     def stop_current_script(self):
@@ -156,14 +164,18 @@ class ScriptManager:
 
     def run(self):
         """メインループ"""
-        print("スクリプト切り替えシステムを開始しました")
+        print("="*60)
+        print("スクリプト切り替えシステムを開始しました (Mac版)")
+        print("="*60)
         print("w/e/rキーでスクリプトを切り替え、'q'で終了します")
-        print("(Enterキーは不要です)")
+        print("(Enterキーは不要です - キーを押すだけで反応します)")
+        print("="*60)
         
         # Mac用のターミナル設定
         self.setup_terminal()
         
         self.show_menu()
+        print("\nキー入力待機中...")
         
         try:
             while self.running:
@@ -172,7 +184,7 @@ class ScriptManager:
                     choice = self.get_key_mac()
                     
                     if choice:
-                        print(f"\n押されたキー: {choice}")
+                        print(f"\n>>> 押されたキー: '{choice}'")
                         
                         if choice == 'q':
                             print("\n終了中...")
@@ -182,10 +194,12 @@ class ScriptManager:
                         elif choice in self.scripts:
                             self.switch_script(choice)
                             self.show_menu()
+                            print("\nキー入力待機中...")
                         else:
-                            print("無効な選択です。w, e, r, またはqを入力してください")
+                            print(f"無効な選択です: '{choice}'")
+                            print("w, e, r, またはqを入力してください")
                     
-                    time.sleep(0.1)  # CPU使用率を抑えるための短い待機
+                    time.sleep(0.05)  # CPU使用率を抑えるための短い待機
                     
                 except KeyboardInterrupt:
                     print("\n\nCtrl+Cが押されました。終了中...")
@@ -194,6 +208,8 @@ class ScriptManager:
                     break
                 except Exception as e:
                     print(f"エラーが発生しました: {e}")
+                    import traceback
+                    traceback.print_exc()
                     time.sleep(1)
         finally:
             # ターミナル設定を復元
