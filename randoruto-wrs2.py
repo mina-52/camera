@@ -17,7 +17,7 @@ BLACK_THRESHOLD = 80
 WHITE_THRESHOLD = 115
 
 # カメラ設定
-CAMERA_INDEX = 0  # カメラのインデックス（通常は0）
+CAMERA_INDEX = 1  # カメラのインデックス（通常は0）
 CAMERA_WIDTH = 1280
 CAMERA_HEIGHT = 720
 CAMERA_FPS = 30
@@ -848,10 +848,10 @@ pause_counter = 0
 image_save_counter = 0
 pause_sequence_counter = 0  # pauseごとの連番カウンター
 
-# YOLOv8nモデルのパス - target.ptを使用
+# YOLOv8nモデルのパス - target2.ptを使用
 # 学習済みYOLOモデルファイルを読み込み
-# target.pt: ターゲット検出専用の学習済みモデル
-model = YOLO('target.pt')  # target.ptファイルを使用
+# target2.pt: ターゲット検出専用の学習済みモデル
+model = YOLO('target.pt')  # target2.ptファイルを使用
 
 print("リアルタイム検出を開始します。'q'キーで終了します。")
 
