@@ -505,35 +505,6 @@ def save_detection_images(frame, detections_with_confidence, frame_count, leftup
             
         except Exception as e:
             print(f"右上画像の保存に失敗しました: {e}")
-    
-    # 詳細な分析結果をテキストファイルとして保存（save_leftup=Trueの場合のみ）
-    if save_leftup:
-        analysis_filename = f"rust_analysis_{session_timestamp}_{frame_count:06d}.txt"
-        analysis_filepath = os.path.join(session_folder, analysis_filename)
-        with open(analysis_filepath, 'w', encoding='utf-8') as f:
-            f.write(f"Rust Detection Analysis Results - Frame {frame_count}\n")
-            f.write(f"Detection Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"Detected Plates: {rust_analysis.get('detected_plates', 0)}\n")
-            f.write(f"Total Rust Count: {rust_analysis['rust_count']}\n")
-            f.write(f"Total Rust Area (pixels): {rust_analysis['total_rust_area']:.0f}\n")
-            f.write(f"Overall Rust Ratio (%): {rust_analysis['rust_ratio']:.2f}\n")
-            f.write(f"Plate Reference Area (mm²): {rust_analysis['board_area']}\n")
-            f.write("\n=== Plate-by-Plate Details ===\n")
-            
-            for detail in rust_analysis.get('rust_details', []):
-                f.write(f"\nPlate {detail['plate_id']}:\n")
-                f.write(f"  Position: ({detail['plate_box'][0]}, {detail['plate_box'][1]}) - ({detail['plate_box'][2]}, {detail['plate_box'][3]})\n")
-                f.write(f"  Plate Area: {detail['plate_area']:.0f} pixels\n")
-                f.write(f"  Rust Spots: {detail['rust_contours_count']}\n")
-                f.write(f"  Rust Area: {detail['rust_area']:.0f} pixels\n")
-                f.write(f"  Rust Ratio: {detail['rust_ratio']:.2f}%\n")
-            
-            f.write("\n=== YOLO Detection Info ===\n")
-            for i, detection in enumerate(detections_with_confidence):
-                f.write(f"Detection {i+1}: {detection['label']} (Confidence: {detection['confidence']:.3f})\n")
-                f.write(f"  Position: ({detection['box'][0]}, {detection['box'][1]}) - ({detection['box'][2]}, {detection['box'][3]})\n")
-        
-        print(f"詳細な分析結果を保存しました: {analysis_filename}")
 
 def create_cropped_image_with_bbox(frame, detection_info, target_width, target_height):
     """検出情報から切り抜き画像とバウンディングボックスを生成（指定サイズにリサイズ）"""
