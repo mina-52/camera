@@ -4,8 +4,10 @@ import os
 import signal
 import time
 import threading
-import msvcrt  # Windowsのキーボード入力用
-
+import select
+import tty
+import termios
+#
 class ScriptManager:
     def __init__(self):
         self.current_process = None
@@ -16,6 +18,42 @@ class ScriptManager:
             'r': 'randoruto-number-sub2.py'
         }
         self.running = True
+        # Mac用のターミナル設定保存
+        self.old_settings = None
+
+    def setup_terminal(self):
+        """Mac用のターミナル設定"""
+        try:
+            self.old_settings = termios.tcgetattr(sys.stdin)
+            tty.setcbreak(sys.stdin.fileno())
+            print("ターミナル設定を変更しました")
+        except Exception as e:
+            print(f"ターミナル設定エラー: {e}")
+
+    def restore_terminal(self):
+        """Mac用のターミナル設定を復元"""
+        try:
+            if self.old_settings:
+                termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.old_settings)
+                print("\nターミナル設定を復元しました")
+        except Exception as e:
+            print(f"ターミナル復元エラー: {e}")
+
+    def get_key_mac(self):
+        """Mac用のキーボード入力取得（ノンブロッキング）"""
+        try:
+            # selectでキー入力があるかチェック（タイムアウト0秒）
+            if select.select([sys.stdin], [], [], 0.0)[0]:
+                key = sys.stdin.read(1)
+                # Ctrl+Cの場合
+                if ord(key) == 3:
+                    raise KeyboardInterrupt
+                return key.lower()
+        except KeyboardInterrupt:
+            raise
+        except Exception as e:
+            print(f"キー入力エラー: {e}")
+        return None
 
     def stop_current_script(self):
         """現在実行中のスクリプトを停止"""
@@ -126,47 +164,56 @@ class ScriptManager:
 
     def run(self):
         """メインループ"""
-        print("スクリプト切り替えシステムを開始しました")
+        print("="*60)
+        print("スクリプト切り替えシステムを開始しました (Mac版)")
+        print("="*60)
         print("w/e/rキーでスクリプトを切り替え、'q'で終了します")
-        print("(Enterキーは不要です)")
+        print("(Enterキーは不要です - キーを押すだけで反応します)")
+        print("="*60)
+        
+        # Mac用のターミナル設定
+        self.setup_terminal()
         
         self.show_menu()
+        print("\nキー入力待機中...")
         
-        while self.running:
-            try:
-                # キー入力を待つ（Enterキー不要）
-                if msvcrt.kbhit():
-                    key = msvcrt.getch()
+        try:
+            while self.running:
+                try:
+                    # Mac用のキー入力処理
+                    choice = self.get_key_mac()
                     
-                    # バイト列を文字列に変換
-                    try:
-                        choice = key.decode('utf-8').lower()
-                    except:
-                        choice = key.decode('cp932').lower()
+                    if choice:
+                        print(f"\n>>> 押されたキー: '{choice}'")
+                        
+                        if choice == 'q':
+                            print("\n終了中...")
+                            self.stop_current_script()
+                            self.running = False
+                            break
+                        elif choice in self.scripts:
+                            self.switch_script(choice)
+                            self.show_menu()
+                            print("\nキー入力待機中...")
+                        else:
+                            print(f"無効な選択です: '{choice}'")
+                            print("w, e, r, またはqを入力してください")
                     
-                    print(f"\n押されたキー: {choice}")
+                    time.sleep(0.05)  # CPU使用率を抑えるための短い待機
                     
-                    if choice == 'q':
-                        print("\n終了中...")
-                        self.stop_current_script()
-                        self.running = False
-                        break
-                    elif choice in self.scripts:
-                        self.switch_script(choice)
-                        self.show_menu()
-                    else:
-                        print("無効な選択です。w, e, r, またはqを入力してください")
-                
-                time.sleep(0.1)  # CPU使用率を抑えるための短い待機
-                
-            except KeyboardInterrupt:
-                print("\n\nCtrl+Cが押されました。終了中...")
-                self.stop_current_script()
-                self.running = False
-                break
-            except Exception as e:
-                print(f"エラーが発生しました: {e}")
-                time.sleep(1)
+                except KeyboardInterrupt:
+                    print("\n\nCtrl+Cが押されました。終了中...")
+                    self.stop_current_script()
+                    self.running = False
+                    break
+                except Exception as e:
+                    print(f"エラーが発生しました: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    time.sleep(1)
+        finally:
+            # ターミナル設定を復元
+            self.restore_terminal()
 
 def main():
     manager = ScriptManager()
@@ -175,6 +222,8 @@ def main():
     except Exception as e:
         print(f"予期しないエラーが発生しました: {e}")
     finally:
+        # ターミナル設定を確実に復元
+        manager.restore_terminal()
         print("スクリプト切り替えシステムを終了しました")
 
 if __name__ == "__main__":
