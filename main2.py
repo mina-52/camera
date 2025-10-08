@@ -7,7 +7,7 @@ import threading
 import termios  # Mac/Unixのキーボード入力用
 import tty
 import select
-
+#test
 class ScriptManager:
     def __init__(self):
         self.current_process = None
