@@ -851,7 +851,7 @@ pause_sequence_counter = 0  # pauseごとの連番カウンター
 # YOLOv8nモデルのパス - target2.ptを使用
 # 学習済みYOLOモデルファイルを読み込み
 # target2.pt: ターゲット検出専用の学習済みモデル
-model = YOLO('target3.pt')  # target2.ptファイルを使用
+model = YOLO('target10_9.pt')  # target2.ptファイルを使用
 
 print("リアルタイム検出を開始します。")
 print("キー操作:")
