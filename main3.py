@@ -22,6 +22,38 @@ class ScriptManager:
         self.running = True
         # Mac用のターミナル設定保存
         self.old_settings = None
+    
+    def focus_vscode_or_terminal(self):
+        """VS Codeまたはターミナルにフォーカスを戻す（Mac用）"""
+        try:
+            # まずVS Codeにフォーカスを試みる
+            result = subprocess.run([
+                'osascript', '-e',
+                'tell application "Visual Studio Code" to activate'
+            ], capture_output=True, timeout=2)
+            
+            if result.returncode == 0:
+                print("VS Codeにフォーカスを戻しました")
+                return True
+            
+            # VS Codeがなければターミナルにフォーカス
+            terminal_apps = ['Terminal', 'iTerm']
+            for app in terminal_apps:
+                result = subprocess.run([
+                    'osascript', '-e',
+                    f'tell application "{app}" to activate'
+                ], capture_output=True, timeout=2)
+                
+                if result.returncode == 0:
+                    print(f"{app}にフォーカスを戻しました")
+                    return True
+            
+            print("⚠ フォーカスを戻せませんでした")
+            return False
+            
+        except Exception as e:
+            print(f"フォーカス処理エラー: {e}")
+            return False
 
     def setup_terminal(self):
         """Mac用のターミナル設定"""
@@ -192,6 +224,9 @@ class ScriptManager:
                             print("\n終了中...")
                             self.stop_current_script()
                             self.running = False
+                            # VS Codeにフォーカスを戻す
+                            print("\nVS Codeにフォーカスを戻しています...")
+                            self.focus_vscode_or_terminal()
                             break
                         elif choice in self.scripts:
                             self.switch_script(choice)
@@ -207,6 +242,9 @@ class ScriptManager:
                     print("\n\nCtrl+Cが押されました。終了中...")
                     self.stop_current_script()
                     self.running = False
+                    # VS Codeにフォーカスを戻す
+                    print("\nVS Codeにフォーカスを戻しています...")
+                    self.focus_vscode_or_terminal()
                     break
                 except Exception as e:
                     print(f"エラーが発生しました: {e}")
@@ -216,6 +254,9 @@ class ScriptManager:
         finally:
             # ターミナル設定を復元
             self.restore_terminal()
+            # 終了時にVS Codeにフォーカスを戻す
+            print("\n最終フォーカス処理中...")
+            self.focus_vscode_or_terminal()
 
 def main():
     manager = ScriptManager()
@@ -226,6 +267,9 @@ def main():
     finally:
         # ターミナル設定を確実に復元
         manager.restore_terminal()
+        # VS Codeにフォーカスを戻す
+        print("\n最終確認: VS Codeにフォーカスを戻しています...")
+        manager.focus_vscode_or_terminal()
         print("スクリプト切り替えシステムを終了しました")
 
 if __name__ == "__main__":
