@@ -314,8 +314,8 @@ while True:
             x1, y1, x2, y2 = map(int, box.xyxy[0])
             confidence = float(box.conf[0])  # 信頼度
             cls_id = int(box.cls[0]) if hasattr(box, 'cls') else -1
-            # kikenbutu.ptモデルから直接ラベル名を取得
-            label = model.names[cls_id] if (cls_id in getattr(model, 'names', {})) else str(cls_id)
+            # 全てのラベルを"kikenbutu"に統一
+            label = "kikenbutu"
             crop = frame[max(0, y1):max(0, y2), max(0, x1):max(0, x2)]
             if crop.size > 0:
                 detections_with_confidence.append({
