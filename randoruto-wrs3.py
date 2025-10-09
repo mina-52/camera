@@ -17,7 +17,7 @@ BLACK_THRESHOLD = 80
 WHITE_THRESHOLD = 115
 
 # カメラ設定
-CAMERA_INDEX = 0  # カメラのインデックス（通常は0）
+CAMERA_INDEX = 1  # カメラのインデックス（通常は0）
 CAMERA_WIDTH = 1280
 CAMERA_HEIGHT = 720
 CAMERA_FPS = 30
@@ -853,7 +853,14 @@ pause_sequence_counter = 0  # pauseごとの連番カウンター
 # target2.pt: ターゲット検出専用の学習済みモデル
 model = YOLO('target3.pt')  # target2.ptファイルを使用
 
-print("リアルタイム検出を開始します。'q'キーで終了します。")
+print("リアルタイム検出を開始します。")
+print("キー操作:")
+print("  '1'キー: 左上を一時停止/再開して保存")
+print("  '2'キー: 左下を一時停止/再開して保存")
+print("  'Enter'キー: 右上（検出画面）の全画面表示/四分割表示を切り替え")
+print("  'q'キー: 終了")
+print("")
+print("💡 ヒント: 全画面表示モードでも'1'/'2'キーで一時停止できます")
 
 # スクリーンサイズ取得（起動時に一度だけ）
 try:
@@ -890,6 +897,9 @@ leftdown_info = None
 leftdown_paused = False  # 左下一時停止フラグ
 leftdown_frame_count = 0  # 左下フレームカウンター
 leftdown_last_frame_time = time.time()  # 左下最後のフレーム更新時間
+
+# --- 全画面表示フラグ（Enterキーで切り替え） ---
+fullscreen_mode = False  # False: 四分割表示、True: 右上全画面表示
 
 # --- 保存用のカウンター ---
 save_counter = 0
@@ -1317,27 +1327,60 @@ while True:
         info_lines.append(f'LeftDown: {"Paused" if leftdown_paused else "Active"}')
         info_lines.append(f'Pause Count: {pause_counter}')
         info_lines.append(f'Image Saves: {image_save_counter}')
-        info_lines.append('Controls: 1=LeftUp, 2=LeftDown, Enter=Both')
+        info_lines.append('Controls: 1=LeftUp, 2=LeftDown, Enter=Fullscreen')
         for i, line in enumerate(info_lines):
             cv2.putText(panel_rd, line, (20, 40 + i*40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
 
-    # 常に四分割で表示（左右を入れ替え）
-    top = np.hstack([panel_ru, panel_lu])
-    bottom = np.hstack([panel_rd, panel_ld])
-    combined = np.vstack([top, bottom])
+    # 全画面表示または四分割表示（Enterキーで切り替え）
+    if fullscreen_mode:
+        # 右上（検出中の画像）を全画面で表示
+        combined = cv2.resize(annotated_frame, (window_width, window_height))
+        
+        # タイトル表示
+        cv2.putText(combined, "DETECTION VIEW - FULLSCREEN", (40, 80), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 2.0, (0, 255, 255), 4)
+        
+        # 検出情報を表示
+        if detections_with_confidence:
+            info_y = 160
+            cv2.putText(combined, f"Detections: {len(detections_with_confidence)}", (40, info_y), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 255), 3)
+            
+            # 上位3つの検出物体を表示
+            for i, detection in enumerate(detections_with_confidence[:3]):
+                info_y += 60
+                label = detection.get('label', 'Unknown')
+                conf = detection.get('confidence', 0)
+                text = f"{i+1}. {label}: {conf:.3f}"
+                cv2.putText(combined, text, (40, info_y), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 255), 2)
+        else:
+            cv2.putText(combined, "No Detections", (40, 160), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 1.5, (200, 200, 200), 3)
+        
+        # 操作ヒントを表示
+        cv2.putText(combined, "Press '1' to Pause Left-Up  |  Press '2' to Pause Left-Down", 
+                   (40, window_height - 120), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (200, 200, 200), 2)
+        cv2.putText(combined, "Press Enter to return to 4-split view", (40, window_height - 40), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 0), 2)
+    else:
+        # 四分割で表示（左右を入れ替え）
+        top = np.hstack([panel_ru, panel_lu])
+        bottom = np.hstack([panel_rd, panel_ld])
+        combined = np.vstack([top, bottom])
 
     cv2.imshow('Target Detection Viewer', combined)
 
     key = cv2.waitKey(1) & 0xFF
     if key == ord('q'):
         break
-    elif key == ord('1'):  # 1キー：左上の一時停止/再開
+    elif key == ord('1'):  # 1キー：左上の一時停止/再開（全画面モードでも動作）
         leftup_paused = not leftup_paused
         if leftup_paused:
             print("左上を一時停止しました")
             # 左上一時停止時に画像を保存
             save_detection_images(frame, detections_with_confidence, leftup_frame_count, leftup_image, leftdown_image, save_leftup=True, save_leftdown=False)
-            print(f"左上一時停止時の画像を保存しました (Total: {save_counter} files)")
+            print(f"画像を保存しました (Total: {save_counter} files)")
             pause_counter += 1
         else:
             print("左上を再開しました")
@@ -1351,19 +1394,12 @@ while True:
             pause_counter += 1
         else:
             print("左下を再開しました")
-    elif key == 13:  # エンターキー：1キーと2キーを同時に押したもの（両方の一時停止/再開）
-        # 両方の状態を同時に切り替え
-        leftup_paused = not leftup_paused
-        leftdown_paused = not leftdown_paused
-        
-        if leftup_paused and leftdown_paused:
-            print("左上と左下を同時に一時停止しました")
-            # 両方一時停止時に画像を保存
-            save_detection_images(frame, detections_with_confidence, leftup_frame_count, leftup_image, leftdown_image, save_leftup=True, save_leftdown=True)
-            print(f"両方一時停止時の画像を保存しました (Total: {save_counter} files)")
-            pause_counter += 1
+    elif key == 13:  # エンターキー：右上の全画面表示/四分割表示の切り替え
+        fullscreen_mode = not fullscreen_mode
+        if fullscreen_mode:
+            print("右上（検出画面）を全画面表示に切り替えました")
         else:
-            print("左上と左下を同時に再開しました")
+            print("四分割表示に戻しました")
 
 cap.release()
 cv2.destroyAllWindows()
