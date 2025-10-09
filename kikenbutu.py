@@ -302,7 +302,6 @@ while True:
 
     # 推論
     results = model(frame)
-    annotated_frame = results[0].plot()
     detection_count = 0
 
     # 信頼度・ラベル付きで検出結果を収集
@@ -328,6 +327,20 @@ while True:
 
     # 信頼度でソート（高い順）
     detections_with_confidence.sort(key=lambda x: x['confidence'], reverse=True)
+    
+    # 手動でアノテーション付き画像を作成（全てのラベルを"kikenbutu"で統一）
+    annotated_frame = frame.copy()
+    for detection in detections_with_confidence:
+        x1, y1, x2, y2 = detection['box']
+        label = detection['label']  # "kikenbutu"に統一済み
+        confidence = detection['confidence']
+        
+        # バウンディングボックスを描画
+        cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        
+        # ラベルと信頼度のテキストを追加
+        text = f"{label}: {confidence:.3f}"
+        cv2.putText(annotated_frame, text, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
 
     # 左上のフレーム更新（0.9秒ごと、一時停止中でない場合）
     if not leftup_paused and (now - leftup_last_frame_time > 0.9):
