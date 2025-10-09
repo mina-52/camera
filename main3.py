@@ -16,7 +16,7 @@ class ScriptManager:
             'w': 'randoruto-wrs2.py',
             'e': 'QR.py',
             'r': 'randoruto-wrs3.py',
-            't': 'sabi.py',
+            't': 'sabi-obs.py',
             'y': 'kikenbutu.py'
         }
         self.running = True
