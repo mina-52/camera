@@ -17,7 +17,8 @@ class ScriptManager:
             'e': 'QR.py',
             'r': 'randoruto-wrs3.py',
             't': 'sabi-obs.py',
-            'y': 'kikenbutu.py'
+            'y': 'kikenbutu.py',
+            'u': 'mosyon.py'
         }
         self.running = True
         # Mac用のターミナル設定保存
@@ -201,7 +202,7 @@ class ScriptManager:
         print("="*60)
         print("スクリプト切り替えシステムを開始しました (Mac版)")
         print("="*60)
-        print("w/e/r/t/yキーでスクリプトを切り替え、'q'で終了します")
+        print("w/e/r/t/y/uキーでスクリプトを切り替え、'q'で終了します")
         print("(Enterキーは不要です - キーを押すだけで反応します)")
         print("="*60)
         
@@ -234,7 +235,7 @@ class ScriptManager:
                             print("\nキー入力待機中...")
                         else:
                             print(f"無効な選択です: '{choice}'")
-                            print("w, e, r, t, y, またはqを入力してください")
+                            print("w, e, r, t, y, u, またはqを入力してください")
                     
                     time.sleep(0.05)  # CPU使用率を抑えるための短い待機
                     
