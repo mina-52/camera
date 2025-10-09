@@ -13,9 +13,9 @@ class ScriptManager:
         self.current_process = None
         self.current_script = None
         self.scripts = {
-            'w': 'randoruto-wrs2.py',
+            'r': 'randoruto-wrs2.py',
             'e': 'QR.py',
-            'r': 'randoruto-wrs3.py',
+            'w': 'randoruto-wrs3.py',
             't': 'sabi-obs.py',
             'y': 'kikenbutu.py',
             'u': 'mosyon.py'
