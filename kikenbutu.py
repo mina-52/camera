@@ -9,7 +9,7 @@ from datetime import datetime
 # ----------------------------------------------------
 # 1. OBS仮想カメラの読み込み設定
 # ----------------------------------------------------
-cap = cv2.VideoCapture(1)  # 仮想カメラのインデックス。環境に合わせて変更してください
+cap = cv2.VideoCapture(0)  # 仮想カメラのインデックス。環境に合わせて変更してください
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 cap.set(cv2.CAP_PROP_FPS, 30)
