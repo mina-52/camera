@@ -208,7 +208,7 @@ def mark_rust_on_frame(frame, rust_analysis):
         # HSV変換して錆検出（明度のみを条件に）
         hsv = cv2.cvtColor(plate_region, cv2.COLOR_BGR2HSV)
         # 明度(V): 15-86（暗い色をサビとして認識）
-        v_condition = (hsv[:,:,2] >= 15) & (hsv[:,:,2] <= 70)  # 明度は15-86（暗い色）
+        v_condition = (hsv[:,:,2] >= 15) & (hsv[:,:,2] <= 86)  # 明度は15-86（暗い色）
         rust_mask = (v_condition * 255).astype(np.uint8)
         
         # ノイズ除去
